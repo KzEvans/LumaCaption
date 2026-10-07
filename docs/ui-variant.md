@@ -4,7 +4,9 @@
 
 ## 界面结构
 
-macOS 的可见界面全部使用 AppKit。`NSSplitViewController` 与原生 source list 承载六个页面，窗口启用 `.fullSizeContentView` 和透明隐藏标题栏，不创建顶部工具栏。边栏背景延伸到红黄绿按钮所在区域，导航内容遵循安全区。开始、暂停、悬浮窗与立即停止合并到各页共用的底部玻璃会话栏，包含状态、电平、隐私提示与模型信息。系统窗口按钮、菜单与原生响应链继续使用 macOS 行为。
+macOS 的可见界面全部使用 AppKit。`NSSplitViewController` 与原生 source list 承载六个页面，窗口启用 `.fullSizeContentView` 和透明隐藏标题栏。空的 `.unified` NSToolbar 仅由 AppKit 分配系统窗口控制区域，不显示标题、侧边栏切换或操作项。边栏背景延伸到红黄绿按钮所在区域，导航内容遵循安全区；顶部保留品牌图标与 LumaCaption 名称。开始、暂停、悬浮窗与立即停止合并到各页共用的底部玻璃会话栏，包含状态、电平、隐私提示与模型信息。系统窗口按钮、菜单与原生响应链继续使用 macOS 行为。
+
+macOS 采集时的紫色隐私提示与「窗口共享」按钮由系统管理；部分系统状态会用共享入口替换窗口控制，应用没有公开接口强制二者同时出现。空工具栏使正常标题栏按系统布局分配空间；⌘W 关闭或隐藏、⌘M 最小化、窗口菜单缩放与 ⌃⌘F 全屏入口仍可使用。
 
 | 页面 | 原生内容与交互 |
 | --- | --- |
@@ -23,7 +25,7 @@ macOS 的可见界面全部使用 AppKit。`NSSplitViewController` 与原生 sou
 
 按 Apple 指南把玻璃用于控制、导航与浮动层，正文和表单以可读性为主。macOS 26+ 的标准控件采用系统外观，自定义浮动控制和字幕使用正式 `NSGlassEffectView`。13.3–15 回退为 `NSVisualEffectView`；开启“减少透明度”时使用不透明语义背景，监听系统辅助功能显示变化。材质不透明度不降低字幕文字的透明度。
 
-原生系统字体、SF Symbols、强调色、选中状态、焦点环、滚动与窗口行为贯穿所有页面。⌘1–6 切换页面，⌘, 打开设置，⌘Return 开始或停止，⌘P 暂停或继续，⌘L 显示或隐藏悬浮字幕，⌘F 查找字幕，⌃⌘S 折叠侧边栏，⌃⌘F 进入或退出全屏。剪切、复制、粘贴、撤销和重做走原生响应链。
+原生系统字体、SF Symbols、强调色、选中状态、焦点环、滚动与窗口行为贯穿所有页面。⌘1–6 切换页面，⌘, 打开设置，⌘Return 开始或停止，⌘P 暂停或继续，⌘L 显示或隐藏悬浮字幕，⌘F 查找字幕，⌃⌘S 折叠侧边栏，⌃⌘F 进入或退出全屏。剪切、复制、粘贴、撤销和重做走原生响应链。品牌图标采用平面字幕气泡与声波，ICNS 用于应用图标和边栏；生成提示见 [品牌资源说明](../assets/branding/README.md)。
 
 参考：[Apple Liquid Glass 采用指南](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)、[为 macOS 设计](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos)、[NSGlassEffectView](https://developer.apple.com/documentation/appkit/nsglasseffectview)。未使用实验性的 effectIsInteractive 接口。
 
@@ -32,6 +34,8 @@ macOS 的可见界面全部使用 AppKit。`NSSplitViewController` 与原生 sou
 `native/macos/main.swift` 启动允许无视图运行的 Flutter Engine；macOS 不创建 FlutterViewController，也不挂载 Flutter 内容页。识别、翻译、模型和存储继续使用真实 Dart 控制器与原生音频、Whisper、钥匙串桥接。
 
 `lib/app/mac_workbench.dart` 将显示状态发送到 `lumacaption/design`，接收实际操作。PCM 和已保存凭据不进入界面状态。捕获期间锁定声音及服务配置；界面更新合并，只有当前页面更新页面控件，会话栏在所有页面同步；字幕文本保持选择与滚动位置。API Key 只通过用户的保存操作交给安全存储，成功后清空输入；连接测试仅由按钮明确发起。
+
+系统声音权限依据真实 ScreenCaptureKit 结果更新；CG 预检不通过只表示尚待开始确认，不会单独阻止采集。系统拒绝、麦克风拒绝与音频流启动失败分别显示原因。开始失败会恢复可重试状态，并刷新权限；设置页显示当前应用路径，便于核对同名开发副本。
 
 旧的“原生导航 + Flutter 正文”协调器已移除。Flutter shell 仅保留为其它平台入口和组件回归测试，不能用它的测试结果宣称原生 macOS 布局通过。
 

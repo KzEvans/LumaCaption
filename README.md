@@ -2,7 +2,7 @@
 
 macOS/Windows 实时字幕应用，共享 Dart 识别、翻译与存储逻辑。macOS 界面由 AppKit 完整承载，Windows 界面使用 Flutter。当前 0.1.0 为开发测试版；平台验收状态见 [docs/testing.md](docs/testing.md)，协议与能力边界见 [docs/feasibility.md](docs/feasibility.md)。产品完整要求保存在 [docs/product-spec.zh.md](docs/product-spec.zh.md)。
 
-当前分支 `codex/mac-liquid-glass` 的六个主页面、底部会话控制栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。全高度边栏包含系统窗口按钮，布局参考 Apple Music。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
+当前分支 `codex/mac-liquid-glass` 的六个主页面、底部会话控制栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。全高度边栏包含系统窗口按钮、品牌图标与 LumaCaption 名称，布局参考 Apple Music。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
 
 ## 使用
 
@@ -15,6 +15,8 @@ macOS 打开 `dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，拖动 Luma
 5. 打开悬浮窗；macOS 从菜单栏或 ⌃⌥⌘L 恢复鼠标交互，Windows 从托盘或 Ctrl+Alt+I 恢复。主窗口关闭会隐藏，退出会停止采集。
 6. 「历史与导出」提供 TXT/SRT/VTT。默认字幕只在内存，原始音频不落盘、不回放，无遥测。
    开启历史保存后，已确认字幕可跨启动浏览；SRT/VTT 按会话导出，全部会话可导出 TXT。
+
+macOS 开发包更新可能改变 ad-hoc 代码身份，多个同名副本也容易混淆授权对象。「设置与诊断」显示正在运行的应用路径，并区分开始时确认、当前副本被拒绝与需重启的状态。若开关已开启但仍收到系统拒绝，请完全退出应用；必要时在「屏幕与系统音频录制」移除旧条目，再添加当前 `/Applications/LumaCaption.app` 后重新打开。权限以真实 ScreenCaptureKit 启动结果为准，音频设备启动错误不会再归类为未授权。
 
 ## 构建
 
