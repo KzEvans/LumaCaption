@@ -4,8 +4,7 @@ import 'package:flutter/services.dart';
 import '../core/models/model_manager.dart';
 import '../core/subtitles/subtitles.dart';
 import 'controller.dart';
-
-const accent = Color(0xff5465d9);
+import 'design.dart';
 
 class LumaApp extends StatefulWidget {
   const LumaApp({super.key, required this.controller});
@@ -32,61 +31,11 @@ class _LumaAppState extends State<LumaApp> {
         'dark' => ThemeMode.dark,
         _ => ThemeMode.system,
       },
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
+      theme: lumaTheme(Brightness.light),
+      darkTheme: lumaTheme(Brightness.dark),
       home: Shell(c: widget.controller),
     ),
   );
-  ThemeData _theme(Brightness brightness) {
-    final dark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(
-      seedColor: accent,
-      brightness: brightness,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: dark
-          ? const Color(0xff17191e)
-          : const Color(0xfff6f7fa),
-      fontFamily: Platform.isMacOS ? '.AppleSystemUIFont' : 'Segoe UI',
-      dividerColor: dark ? const Color(0xff30333c) : const Color(0xffe4e6ed),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        color: dark ? const Color(0xff21242b) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(
-            color: dark ? const Color(0xff30333c) : const Color(0xffe4e6ed),
-          ),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: dark ? const Color(0xff272a33) : const Color(0xfffafbfe),
-        isDense: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(9),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(0, 42),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        ),
-      ),
-      textTheme: const TextTheme(
-        bodyMedium: TextStyle(fontSize: 14, height: 1.5),
-        bodySmall: TextStyle(fontSize: 12, height: 1.5),
-        titleLarge: TextStyle(
-          fontSize: 25,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -.6,
-        ),
-      ),
-    );
-  }
 }
 
 class Shell extends StatefulWidget {
@@ -100,6 +49,7 @@ class _ShellState extends State<Shell> {
   int page = 0;
   int? historySession;
   AppController get c => widget.c;
+  Color get accent => Theme.of(context).colorScheme.primary;
   final labels = ['实时字幕', '模型管理', '翻译服务', '字幕外观', '历史与导出', '设置与诊断'];
   final icons = [
     Icons.subtitles_outlined,
@@ -127,111 +77,7 @@ class _ShellState extends State<Shell> {
       child: Scaffold(
         body: Row(
           children: [
-            Container(
-              width: 208,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                border: Border(
-                  right: BorderSide(color: Theme.of(context).dividerColor),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 33,
-                          height: 33,
-                          decoration: BoxDecoration(
-                            color: accent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.closed_caption_outlined,
-                            color: Colors.white,
-                            size: 21,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'LumaCaption',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -.4,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (var i = 0; i < labels.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 3,
-                      ),
-                      child: Material(
-                        color: page == i
-                            ? accent.withValues(alpha: .12)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(9),
-                        child: ListTile(
-                          dense: true,
-                          minLeadingWidth: 20,
-                          leading: Icon(
-                            icons[i],
-                            size: 20,
-                            color: page == i ? accent : null,
-                          ),
-                          title: Text(
-                            labels[i],
-                            style: TextStyle(
-                              fontWeight: page == i
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                              color: page == i ? accent : null,
-                            ),
-                          ),
-                          selected: page == i,
-                          onTap: () => setState(() => page = i),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                        ),
-                      ),
-                    ),
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '让理解，跟上声音。',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text('桌面版 0.1.0', style: TextStyle(fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _navigation(),
             Expanded(
               child: Column(
                 children: [
@@ -251,6 +97,95 @@ class _ShellState extends State<Shell> {
       ),
     ),
   );
+  Widget _navigation() => LayoutBuilder(
+    builder: (context, constraints) {
+      final extended = MediaQuery.sizeOf(context).width >= 1040;
+      final colors = Theme.of(context).colorScheme;
+      return NavigationRail(
+        extended: extended,
+        minWidth: 88,
+        minExtendedWidth: 216,
+        useIndicator: true,
+        trailingAtBottom: true,
+        scrollable: true,
+        labelType: extended
+            ? NavigationRailLabelType.none
+            : NavigationRailLabelType.all,
+        selectedIndex: page < 4 ? page : null,
+        onDestinationSelected: (value) => setState(() => page = value),
+        leading: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 24),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.closed_caption_rounded,
+                color: colors.primary,
+                size: 32,
+              ),
+              if (extended) ...[
+                const SizedBox(width: 12),
+                Text(
+                  'LumaCaption',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ],
+          ),
+        ),
+        destinations: [
+          for (var i = 0; i < 4; i++)
+            NavigationRailDestination(
+              icon: Icon(icons[i]),
+              label: Text(labels[i]),
+            ),
+        ],
+        trailing: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 4; i < labels.length; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Tooltip(
+                  message: labels[i],
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: page == i
+                          ? colors.onSecondaryContainer
+                          : colors.onSurfaceVariant,
+                      backgroundColor: page == i
+                          ? colors.secondaryContainer
+                          : Colors.transparent,
+                    ),
+                    onPressed: () => setState(() => page = i),
+                    child: extended
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(icons[i]),
+                              const SizedBox(width: 12),
+                              Text(labels[i]),
+                            ],
+                          )
+                        : Column(
+                            children: [
+                              Icon(icons[i]),
+                              const SizedBox(height: 4),
+                              Text(
+                                labels[i],
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    },
+  );
   Widget _toolbar() => Container(
     height: 78,
     padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -259,7 +194,14 @@ class _ShellState extends State<Shell> {
     ),
     child: Row(
       children: [
-        Text(labels[page], style: Theme.of(context).textTheme.titleLarge),
+        Flexible(
+          child: Text(
+            labels[page],
+            style: Theme.of(context).textTheme.headlineSmall,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         if (c.testMode || c.fileInput) ...[
           const SizedBox(width: 12),
           Text(
@@ -268,7 +210,7 @@ class _ShellState extends State<Shell> {
           ),
         ],
         const Spacer(),
-        OutlinedButton.icon(
+        FilledButton.tonalIcon(
           onPressed: () => run(c.toggleOverlay),
           icon: Icon(
             c.overlayVisible ? Icons.picture_in_picture_alt : Icons.open_in_new,
@@ -309,7 +251,7 @@ class _ShellState extends State<Shell> {
         Icon(
           c.running ? Icons.circle : Icons.circle_outlined,
           size: 8,
-          color: c.running ? const Color(0xff278a62) : null,
+          color: c.running ? accent : null,
         ),
         const SizedBox(width: 8),
         Expanded(
@@ -571,11 +513,7 @@ class _ShellState extends State<Shell> {
                 color: accent.withValues(alpha: .08),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(
-                Icons.graphic_eq_rounded,
-                size: 30,
-                color: accent,
-              ),
+              child: Icon(Icons.graphic_eq_rounded, size: 30, color: accent),
             ),
             const SizedBox(height: 20),
             Text(
@@ -718,7 +656,7 @@ class _ShellState extends State<Shell> {
       _card(
         Row(
           children: [
-            const Icon(Icons.check_circle_outline, color: accent, size: 22),
+            Icon(Icons.check_circle_outline, color: accent, size: 22),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -805,7 +743,7 @@ class _ShellState extends State<Shell> {
                   color: accent.withValues(alpha: .08),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: const Icon(Icons.memory_outlined, color: accent),
+                child: Icon(Icons.memory_outlined, color: accent),
               ),
               const SizedBox(width: 15),
               Expanded(
