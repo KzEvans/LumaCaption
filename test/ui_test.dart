@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumacaption/app/controller.dart';
 import 'package:lumacaption/app/shell.dart';
+import 'package:lumacaption/app/design.dart';
 import 'package:lumacaption/core/storage/native_bridge.dart';
 
 class _Native extends NativeBridge {
@@ -30,8 +31,13 @@ class _Native extends NativeBridge {
 }
 
 void main() {
-  for (final size in [const Size(1120, 800), const Size(860, 650)]) {
-    testWidgets('desktop pages actionable at $size without overflow', (
+  for (final (size, brightness, scale) in [
+    (const Size(1120, 800), Brightness.light, 1.0),
+    (const Size(1120, 800), Brightness.dark, 1.25),
+    (const Size(860, 650), Brightness.light, 1.25),
+    (const Size(860, 650), Brightness.dark, 1.0),
+  ]) {
+    testWidgets('macOS content pages at $size $brightness scale $scale', (
       tester,
     ) async {
       tester.view.physicalSize = size;
@@ -47,12 +53,20 @@ void main() {
           ListenableBuilder(
             listenable: c,
             builder: (context, _) => MaterialApp(
-              theme: ThemeData(useMaterial3: true),
-              home: Shell(c: c),
+              theme: macContentTheme(brightness),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(scale),
+                  disableAnimations: true,
+                ),
+                child: child!,
+              ),
+              home: Shell(c: c, useNativeChrome: false),
             ),
           ),
         );
         await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '实时字幕');
         expect(find.text('字幕，从这里开始'), findsOneWidget);
         expect(find.textContaining('上传音频至翻译服务'), findsWidgets);
         for (final label in ['模型管理', '翻译服务', '字幕外观', '历史与导出', '设置与诊断']) {

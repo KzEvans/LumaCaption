@@ -5,8 +5,12 @@ import FlutterMacOS
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var bridge: NativeBridge!
+    var design: GlassChromeFactory!
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = FlutterViewController(project: FlutterDartProject(precompiledDartBundle: nil))
+        controller.backgroundColor = .clear
+        design = GlassChromeFactory(messenger: controller.engine.binaryMessenger)
+        controller.engine.registrar(forPlugin: "LumaGlassChrome").register(design, withId: "lumacaption/glass-chrome")
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "LumaCaption"; window.minSize = NSSize(width: 860, height: 650)
         window.contentViewController = controller; window.delegate = self; window.isReleasedWhenClosed = false

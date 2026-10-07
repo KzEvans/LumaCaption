@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'app/controller.dart';
 import 'app/shell.dart';
 import 'core/subtitles/subtitles.dart';
@@ -88,6 +89,10 @@ void main(List<String> args) {
           'text': exportSubtitles(controller.subtitles.segments),
           'captureAfterStop': await controller.native.call<Map>('audio.status'),
           'permissions': controller.permissions,
+          if (Platform.isMacOS)
+            'design': await const MethodChannel(
+              'lumacaption/design',
+            ).invokeMapMethod<String, dynamic>('status'),
           'overlayVisible': visible,
           'overlayClickThrough': through,
           'overlayRecovered': recovered,

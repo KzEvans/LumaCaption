@@ -2,9 +2,11 @@
 
 Flutter/Dart 主体 + Swift/C++ 原生桥接的 macOS/Windows 实时字幕应用。当前 0.1.0 为开发测试版；平台验收状态见 [docs/testing.md](docs/testing.md)，协议与能力边界见 [docs/feasibility.md](docs/feasibility.md)。产品完整要求保存在 [docs/product-spec.zh.md](docs/product-spec.zh.md)。
 
+当前分支 `codex/mac-liquid-glass` 使用原生 AppKit Liquid Glass 导航与控制区；Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。切换与设计说明见 [docs/ui-variant.md](docs/ui-variant.md)。
+
 ## 使用
 
-macOS 打开 `dist/LumaCaption-0.1.0-macos-arm64.dmg`，拖动 LumaCaption.app 到 Applications，然后启动。测试包采用 ad-hoc 签名，未 Developer ID 签名或公证。应用无需 Flutter、Python、Node 或编译工具。
+macOS 打开 `dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，拖动 LumaCaption.app 到 Applications，然后启动。测试包采用 ad-hoc 签名，未 Developer ID 签名或公证。应用无需 Flutter、Python、Node 或编译工具。
 
 1. 在「模型管理」下载多语言 tiny/base/small，或导入兼容 GGML `.bin`。先选择「使用」加载。首次启动不自动下载。
 2. 在「实时字幕」选择工作模式和音频来源。离线模式完全本地；千问实时模式上传音频；文本模式只上传确认原文。
@@ -18,7 +20,7 @@ macOS 打开 `dist/LumaCaption-0.1.0-macos-arm64.dmg`，拖动 LumaCaption.app �
 
 固定 Flutter 3.47.6（Dart 3.13.5），`pubspec.lock` 锁定依赖；Whisper v1.8.1。模型权重不打包。
 
-macOS arm64：需要 Flutter、CMake、git 和 Xcode 或可用 CLT SDK。脚本可用本项目 `.tools/flutter/bin/flutter`，或环境变量 `LUMA_FLUTTER` 指定已安装 Flutter。
+macOS arm64：需要 Flutter、CMake、git，以及 macOS 26+ SDK（Xcode 或可用 CLT）。macOS 26+ 使用原生 Liquid Glass，13.3–15 使用 NSVisualEffectView。降低透明度时使用实色背景。脚本可用本项目 `.tools/flutter/bin/flutter`，或环境变量 `LUMA_FLUTTER` 指定已安装 Flutter。
 当前经过验证的 macOS 入口是下面的构建脚本；`macos/` Xcode scaffold 尚未集成原生桥接，不使用它作为完整开发运行入口。
 
 ```sh

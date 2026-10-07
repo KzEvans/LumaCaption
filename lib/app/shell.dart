@@ -4,8 +4,8 @@ import 'package:flutter/services.dart';
 import '../core/models/model_manager.dart';
 import '../core/subtitles/subtitles.dart';
 import 'controller.dart';
-
-const accent = Color(0xff5465d9);
+import 'mac_chrome.dart';
+import 'design.dart';
 
 class LumaApp extends StatefulWidget {
   const LumaApp({super.key, required this.controller});
@@ -32,66 +32,17 @@ class _LumaAppState extends State<LumaApp> {
         'dark' => ThemeMode.dark,
         _ => ThemeMode.system,
       },
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
+      theme: macContentTheme(Brightness.light),
+      darkTheme: macContentTheme(Brightness.dark),
       home: Shell(c: widget.controller),
     ),
   );
-  ThemeData _theme(Brightness brightness) {
-    final dark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(
-      seedColor: accent,
-      brightness: brightness,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: dark
-          ? const Color(0xff17191e)
-          : const Color(0xfff6f7fa),
-      fontFamily: Platform.isMacOS ? '.AppleSystemUIFont' : 'Segoe UI',
-      dividerColor: dark ? const Color(0xff30333c) : const Color(0xffe4e6ed),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        color: dark ? const Color(0xff21242b) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(
-            color: dark ? const Color(0xff30333c) : const Color(0xffe4e6ed),
-          ),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: dark ? const Color(0xff272a33) : const Color(0xfffafbfe),
-        isDense: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(9),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(0, 42),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        ),
-      ),
-      textTheme: const TextTheme(
-        bodyMedium: TextStyle(fontSize: 14, height: 1.5),
-        bodySmall: TextStyle(fontSize: 12, height: 1.5),
-        titleLarge: TextStyle(
-          fontSize: 25,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -.6,
-        ),
-      ),
-    );
-  }
 }
 
 class Shell extends StatefulWidget {
-  const Shell({super.key, required this.c});
+  const Shell({super.key, required this.c, this.useNativeChrome = true});
   final AppController c;
+  final bool useNativeChrome;
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -100,6 +51,32 @@ class _ShellState extends State<Shell> {
   int page = 0;
   int? historySession;
   AppController get c => widget.c;
+  Color get accent => Theme.of(context).colorScheme.primary;
+  MacChromeCoordinator? _chrome;
+  bool get nativeChrome => widget.useNativeChrome && Platform.isMacOS;
+  @override
+  void initState() {
+    super.initState();
+    if (nativeChrome) {
+      _chrome = MacChromeCoordinator(c: c, navigate: _navigate);
+      c.addListener(_syncChrome);
+      _syncChrome();
+    }
+  }
+
+  void _syncChrome() => _chrome?.sync(page);
+  void _navigate(int value) {
+    setState(() => page = value);
+    _syncChrome();
+  }
+
+  @override
+  void dispose() {
+    c.removeListener(_syncChrome);
+    _chrome?.dispose();
+    super.dispose();
+  }
+
   final labels = ['实时字幕', '模型管理', '翻译服务', '字幕外观', '历史与导出', '设置与诊断'];
   final icons = [
     Icons.subtitles_outlined,
@@ -127,115 +104,126 @@ class _ShellState extends State<Shell> {
       child: Scaffold(
         body: Row(
           children: [
-            Container(
-              width: 208,
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                border: Border(
-                  right: BorderSide(color: Theme.of(context).dividerColor),
+            if (nativeChrome)
+              const SizedBox(width: 224, child: MacChrome(role: 'navigation'))
+            else
+              Container(
+                width: 224,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  border: Border(
+                    right: BorderSide(color: Theme.of(context).dividerColor),
+                  ),
                 ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 33,
-                          height: 33,
-                          decoration: BoxDecoration(
-                            color: accent,
-                            borderRadius: BorderRadius.circular(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 33,
+                            height: 33,
+                            decoration: BoxDecoration(
+                              color: accent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.closed_caption_outlined,
+                              color: Colors.white,
+                              size: 21,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.closed_caption_outlined,
-                            color: Colors.white,
-                            size: 21,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'LumaCaption',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -.4,
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                'LumaCaption',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -.4,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  for (var i = 0; i < labels.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 3,
+                        ],
                       ),
-                      child: Material(
-                        color: page == i
-                            ? accent.withValues(alpha: .12)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(9),
-                        child: ListTile(
-                          dense: true,
-                          minLeadingWidth: 20,
-                          leading: Icon(
-                            icons[i],
-                            size: 20,
-                            color: page == i ? accent : null,
-                          ),
-                          title: Text(
-                            labels[i],
-                            style: TextStyle(
-                              fontWeight: page == i
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
+                    ),
+                    for (var i = 0; i < labels.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 3,
+                        ),
+                        child: Material(
+                          color: page == i
+                              ? accent.withValues(alpha: .12)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(9),
+                          child: ListTile(
+                            dense: true,
+                            minLeadingWidth: 20,
+                            leading: Icon(
+                              icons[i],
+                              size: 20,
                               color: page == i ? accent : null,
                             ),
-                          ),
-                          selected: page == i,
-                          onTap: () => setState(() => page = i),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(9),
+                            title: Text(
+                              labels[i],
+                              style: TextStyle(
+                                fontWeight: page == i
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: page == i ? accent : null,
+                              ),
+                            ),
+                            selected: page == i,
+                            onTap: () => setState(() => page = i),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(9),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '让理解，跟上声音。',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
+                    const Spacer(),
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '让理解，跟上声音。',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text('桌面版 0.1.0', style: TextStyle(fontSize: 11)),
-                      ],
+                          const SizedBox(height: 6),
+                          const Text(
+                            '桌面版 0.1.0',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             Expanded(
               child: Column(
                 children: [
-                  _toolbar(),
+                  nativeChrome
+                      ? const SizedBox(
+                          height: 78,
+                          child: MacChrome(role: 'toolbar'),
+                        )
+                      : _toolbar(),
                   Expanded(
                     child: !c.initialized
                         ? const Center(child: CircularProgressIndicator())
@@ -259,7 +247,14 @@ class _ShellState extends State<Shell> {
     ),
     child: Row(
       children: [
-        Text(labels[page], style: Theme.of(context).textTheme.titleLarge),
+        Flexible(
+          child: Text(
+            labels[page],
+            style: Theme.of(context).textTheme.titleLarge,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         if (c.testMode || c.fileInput) ...[
           const SizedBox(width: 12),
           Text(
@@ -374,6 +369,7 @@ class _ShellState extends State<Shell> {
     void Function(String) onChanged, {
     bool enabled = true,
   }) => DropdownButtonFormField<String>(
+    isExpanded: true,
     initialValue: choices.containsKey(value) ? value : choices.keys.first,
     decoration: InputDecoration(labelText: label),
     items: choices.entries
@@ -571,11 +567,7 @@ class _ShellState extends State<Shell> {
                 color: accent.withValues(alpha: .08),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(
-                Icons.graphic_eq_rounded,
-                size: 30,
-                color: accent,
-              ),
+              child: Icon(Icons.graphic_eq_rounded, size: 30, color: accent),
             ),
             const SizedBox(height: 20),
             Text(
@@ -718,7 +710,7 @@ class _ShellState extends State<Shell> {
       _card(
         Row(
           children: [
-            const Icon(Icons.check_circle_outline, color: accent, size: 22),
+            Icon(Icons.check_circle_outline, color: accent, size: 22),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -805,7 +797,7 @@ class _ShellState extends State<Shell> {
                   color: accent.withValues(alpha: .08),
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: const Icon(Icons.memory_outlined, color: accent),
+                child: Icon(Icons.memory_outlined, color: accent),
               ),
               const SizedBox(width: 15),
               Expanded(
@@ -1195,6 +1187,7 @@ class _ProviderFormState extends State<ProviderForm> {
   final keyField = TextEditingController();
   late final TextEditingController workspace, endpoint, model, proxy;
   AppController get c => widget.c;
+  Color get accent => Theme.of(context).colorScheme.primary;
   bool get text => c.settings.mode == 'text';
   bool reveal = false;
   @override
