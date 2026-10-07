@@ -5,6 +5,49 @@ import 'package:lumacaption/core/diagnostics/session_timing.dart';
 
 void main() {
   test(
+    'request milestones join source ordinal without recording request text',
+    () {
+      var us = 0;
+      final timing = SessionTiming(generation: 1, elapsedMicroseconds: () => us)
+        ..preparationStarted()
+        ..audioStarted();
+      us = 3000000;
+      timing.textRequest(
+        generation: 1,
+        segmentId: 'private-id',
+        sourceRevision: 2,
+        stage: 'requestStarted',
+        requestElapsedMs: 0,
+        attempt: 0,
+      );
+      us += 200000;
+      timing.textRequest(
+        generation: 1,
+        segmentId: 'private-id',
+        sourceRevision: 2,
+        stage: 'firstDelta',
+        requestElapsedMs: 200,
+        attempt: 0,
+      );
+      timing.textRequest(
+        generation: 2,
+        segmentId: 'old-id',
+        sourceRevision: 3,
+        stage: 'failed',
+        requestElapsedMs: 100,
+        attempt: 0,
+      );
+      final events = timing.report()['events'] as List;
+      final requests = events
+          .where((e) => e['event'] == 'textRequest')
+          .toList();
+      expect(requests.length, 2);
+      expect(requests.last['segment'], requests.first['segment']);
+      expect(requests.last['requestElapsedMs'], 200);
+      expect(jsonEncode(timing.report()), isNot(contains('private-id')));
+    },
+  );
+  test(
     'paced session separates preparation, visible results and EOF drain',
     () {
       var us = 1000000;

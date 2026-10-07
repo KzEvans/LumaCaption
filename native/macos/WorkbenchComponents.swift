@@ -207,7 +207,9 @@ final class TranscriptView: NSView {
         for segment in segments {
             let time = (segment["startUs"] as? NSNumber).map { String(format: "%02d:%02d", $0.intValue / 60000000, ($0.intValue / 1000000) % 60) } ?? "实时"
             let confirmed = segment["final"] as? Bool ?? false
-            let meta = "\(time)  ·  \(confirmed ? "已确认" : "识别中")\n"
+            let preview = segment["translationPreview"] as? Bool ?? false
+            let label = preview ? (confirmed ? "原文已确认 · 译文可修订" : "预览 · 可修订") : (confirmed ? "已确认" : "识别中")
+            let meta = "\(time)  ·  \(label)\n"
             value.append(NSAttributedString(string: meta, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
             let original = segment["original"] as? String ?? "", translation = segment["translation"] as? String ?? ""
             if display != "translation", !original.isEmpty { append(original, size: display == "original" ? 20 : 17, to: value) }

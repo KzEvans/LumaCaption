@@ -136,6 +136,12 @@ class AudioChunk {
 /// Bounded energy VAD with revisable 2s previews, 8s utterance windows,
 /// 400ms pre-roll and 500ms overlap. This is a segmentation heuristic.
 class AudioSegmenter {
+  AudioSegmenter({
+    this.previewInterval = const Duration(seconds: 2),
+    this.firstPreview = const Duration(seconds: 2),
+  }) : assert(previewInterval > Duration.zero),
+       assert(firstPreview > Duration.zero);
+  final Duration previewInterval, firstPreview;
   final List<double> _samples = [];
   int? _startUs;
   int _silence = 0, _id = 0, _revision = 0, _lastPreview = 0;
@@ -186,7 +192,11 @@ class AudioSegmenter {
       }
       return [result];
     }
-    if (_speech && _samples.length - _lastPreview >= 32000) {
+    final previewSamples =
+        (_lastPreview == 0 ? firstPreview : previewInterval).inMicroseconds *
+        16000 ~/
+        1000000;
+    if (_speech && _samples.length - _lastPreview >= previewSamples) {
       _lastPreview = _samples.length;
       return [_snapshot(false)];
     }

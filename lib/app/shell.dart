@@ -480,7 +480,7 @@ class _ShellState extends State<Shell> {
                 c.settings.mode == 'realtime'
                     ? '原文与译文分别显示；按真实关联信息对齐。'
                     : c.settings.mode == 'text'
-                    ? '仅已确认原文进入文本翻译。'
+                    ? '稳定原文预览提前翻译，完成后校正。'
                     : '本地原文字幕保留在当前会话内。',
                 style: TextStyle(
                   fontSize: 11,
@@ -595,7 +595,12 @@ class _ShellState extends State<Shell> {
             ),
             const SizedBox(width: 9),
             Text(
-              s.isFinal ? '已确认' : s.error ?? '识别中',
+              s.error ??
+                  (s.stash.isNotEmpty
+                      ? (s.isFinal ? '原文已确认 · 译文可修订' : '预览 · 可修订')
+                      : s.isFinal
+                      ? '已确认'
+                      : '识别中'),
               style: const TextStyle(fontSize: 10),
             ),
             const Spacer(),
@@ -864,7 +869,7 @@ class _ShellState extends State<Shell> {
   Widget _providers() => _scroll([
     _caption('选择符合当前工作模式的服务'),
     const Text(
-      '实时翻译上传音频；文本翻译只上传已确认原文。密钥按服务主机独立保存。',
+      '实时翻译上传音频；文本翻译仅上传原文，含可修订预览。密钥按服务主机独立保存。',
       style: TextStyle(fontSize: 13),
     ),
     const SizedBox(height: 20),

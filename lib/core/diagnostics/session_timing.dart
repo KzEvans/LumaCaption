@@ -168,6 +168,29 @@ class SessionTiming {
     _record('audioFinished', _eofUs!);
   }
 
+  void textRequest({
+    required int generation,
+    required String segmentId,
+    required int sourceRevision,
+    required String stage,
+    required num requestElapsedMs,
+    required int attempt,
+  }) {
+    if (generation != this.generation || _stoppedUs != null) return;
+    _requireAudio();
+    final segment = _segments.putIfAbsent(
+      segmentId,
+      () => _SegmentTiming(_segments.length + 1),
+    );
+    _record('textRequest', _now(), {
+      'segment': segment.ordinal,
+      'sourceRevision': sourceRevision,
+      'stage': stage,
+      'requestElapsedMs': requestElapsedMs,
+      'attempt': attempt,
+    });
+  }
+
   void stopped() {
     if (_stoppedUs != null) return;
     _requirePreparation();

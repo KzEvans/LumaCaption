@@ -11,6 +11,7 @@ import '../core/storage/native_bridge.dart';
 import '../core/storage/settings.dart';
 import '../core/storage/history_store.dart';
 import '../core/subtitles/subtitles.dart';
+import '../core/subtitles/local_preview.dart';
 import '../core/translation/translation.dart';
 import '../core/diagnostics/session_timing.dart';
 
@@ -23,7 +24,8 @@ class AppController extends ChangeNotifier {
   final SubtitleStore subtitles = SubtitleStore();
   final WhisperEngine whisper = WhisperEngine();
   final PcmConverter converter = PcmConverter();
-  final AudioSegmenter segmenter = AudioSegmenter();
+  AudioSegmenter segmenter = AudioSegmenter();
+  final LocalPreviewPipeline _localPreviews = LocalPreviewPipeline();
   final Queue<AudioChunk> _chunks = Queue();
   StreamSubscription<dynamic>? _nativeSub;
   RealtimeTranslator? _realtime;
@@ -59,7 +61,7 @@ class AppController extends ChangeNotifier {
   Timer? _refresh;
   String get privacy => switch (settings.mode) {
     'offline' => '完全本地 · 不上传音频或文本',
-    'text' => '仅上传已确认文本',
+    'text' => '仅上传原文文本 · 含可修订预览',
     _ => '上传音频至翻译服务',
   };
   String get modeName => switch (settings.mode) {
@@ -327,19 +329,26 @@ class AppController extends ChangeNotifier {
       _textQueue = TextTranslationQueue(
         _textAdapter!,
         generation: g,
+        debounce: Duration.zero,
+        onTiming: (id, sourceRevision, timing) {
+          sessionTiming?.textRequest(
+            generation: g,
+            segmentId: id,
+            sourceRevision: sourceRevision,
+            stage: timing.stage.name,
+            requestElapsedMs: timing.elapsedMs,
+            attempt: timing.attempt,
+          );
+        },
         onEvent: (event) {
           if (event.generation != generation) return;
           final i = subtitles.segments.indexWhere(
             (s) => s.generation == g && s.segmentId == event.segmentId,
           );
           if (i >= 0) {
-            final accepted = subtitles.put(
-              subtitles.segments[i].translated(
-                event.text,
-                translationFinal: event.isFinal && !event.interrupted,
-                interrupted: event.interrupted,
-              ),
-            );
+            final translated = _localPreviews.translated(event);
+            if (translated == null) return;
+            final accepted = subtitles.put(translated);
             if (accepted &&
                 !event.interrupted &&
                 event.text.trim().isNotEmpty) {
@@ -384,8 +393,11 @@ class AppController extends ChangeNotifier {
       }
       generation++;
       subtitles.reset(generation);
+      _localPreviews.reset(generation);
       converter.reset();
-      segmenter.reset();
+      segmenter = settings.mode == 'text'
+          ? AudioSegmenter(previewInterval: const Duration(seconds: 1))
+          : AudioSegmenter();
       _chunks.clear();
       _baseUs = 0;
       _previousSequence = -1;
@@ -539,30 +551,41 @@ class AppController extends ChangeNotifier {
         );
         if (g != generation) return;
         rtf = watch.elapsedMicroseconds / (chunk.endUs - chunk.startUs);
-        if (results.isNotEmpty) {
+        {
           var text = results.map((r) => r.text).join().trim();
           if (chunk.startUs < _previousFinalEndUs) {
             text = deduplicateOverlap(_previousText, text);
           }
           final id = 'local:${chunk.segmentId}';
-          final start = chunk.startUs + results.first.startUs;
-          final end = (chunk.startUs + results.last.endUs).clamp(
-            start,
-            chunk.endUs,
-          );
-          if (text.isNotEmpty) {
-            final accepted = subtitles.put(
-              SubtitleSegment(
-                generation: g,
-                segmentId: id,
-                revision: chunk.revision,
-                original: text,
-                startUs: start,
-                endUs: end,
-                isFinal: chunk.isFinal,
-                engine: whisper.backend,
-              ),
+          final start =
+              chunk.startUs + (results.isEmpty ? 0 : results.first.startUs);
+          final end =
+              (results.isEmpty
+                      ? chunk.endUs
+                      : chunk.startUs + results.last.endUs)
+                  .clamp(start, chunk.endUs);
+          {
+            final source = SubtitleSegment(
+              generation: g,
+              segmentId: id,
+              revision: chunk.revision,
+              original: text,
+              startUs: start,
+              endUs: end,
+              isFinal: chunk.isFinal,
+              engine: whisper.backend,
             );
+            final preview = _localPreviews.source(
+              source,
+              audioSnapshotEndUs: chunk.endUs,
+            );
+            if (preview == null) continue;
+            if (text.isEmpty) {
+              subtitles.segments.removeWhere(
+                (s) => s.generation == g && s.segmentId == id,
+              );
+            }
+            final accepted = text.isNotEmpty && subtitles.put(preview.segment);
             if (accepted) {
               sessionTiming?.received(
                 generation: g,
@@ -573,12 +596,18 @@ class AppController extends ChangeNotifier {
                 audioEndUs: end,
               );
             }
-            if (chunk.isFinal) {
+            if (chunk.isFinal && text.isNotEmpty) {
               _previousText = results.map((r) => r.text).join().trim();
               _previousFinalEndUs = end;
+            }
+            if (preview.cancelPending) _textQueue?.cancelSegment(id);
+            final request = preview.request;
+            if (accepted && request != null) {
               _textQueue?.submit(
                 id,
-                text,
+                request.text,
+                sourceRevision: request.revision,
+                sourceFinal: request.isFinal,
                 sourceLanguage: settings.sourceLanguage,
                 targetLanguage: settings.textProvider == 'qwen'
                     ? languageName(settings.targetLanguage)
@@ -628,6 +657,7 @@ class AppController extends ChangeNotifier {
       if (emergency) {
         generation++;
         subtitles.reset(generation);
+        _localPreviews.reset(generation);
         _chunks.clear();
         segmenter.reset();
         whisper.cancel();

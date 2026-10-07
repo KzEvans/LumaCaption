@@ -81,4 +81,22 @@ void main() {
     expect(finalChunk.endUs, 4600000);
     expect(segmenter.flush(), isNull);
   });
+  test(
+    'fast previews keep context and final boundary while checking every second',
+    () {
+      final s = AudioSegmenter(previewInterval: const Duration(seconds: 1));
+      AudioChunk add(int seconds) => s
+          .add(Float32List.fromList(List.filled(16000 * seconds, .1)), 0)
+          .single;
+      final first = add(2), second = add(1), third = add(1);
+      expect(first.endUs, 2000000);
+      expect(second.endUs, 3000000);
+      expect(third.endUs, 4000000);
+      expect(second.segmentId, first.segmentId);
+      expect(second.isFinal, false);
+      final finalChunk = add(4);
+      expect(finalChunk.isFinal, true);
+      expect(finalChunk.endUs, 8000000);
+    },
+  );
 }

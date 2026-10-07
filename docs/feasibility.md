@@ -11,8 +11,9 @@
 | 本地识别 | whisper.cpp v1.8.1，小型 C ABI + Dart FFI，持久工作 isolate，取消回调 | arm64 原生库构建、tiny 多语言模型真实推理通过 |
 | 模型管理 | 上游 GGML，固定仓库 revision，LFS SHA256；Range 续传、哈希/头部校验、临时文件替换 | GUI tiny 下载/校验/加载通过；中断逻辑通过本地 HTTP 测试 |
 | 悬浮字幕 | macOS NSPanel / Windows layered HWND 独立窗口；置顶、无焦点、透明、交互恢复、托盘 | macOS 编译与独立 NSPanel 显示；完整交互验收见 testing.md |
-| 密钥 | Keychain / Credential Manager；scheme+host+port 对应独立 account | 桥接实现；未使用真实 API Key，安全存储实际读写待用户配置 |
-| 千问 3.5 | 官方 WebSocket 专属 text/stash 协议，文本输出；默认 ID 保持不变 | 本地协议服务器测试通过；未验证真实服务 |
+| 密钥 | Keychain / Credential Manager；scheme+host+port 对应独立 account | macOS 实际配置、保存与真实 API 读取通过；Windows 未实测 |
+| 千问实时翻译 | 默认 3.8 delta/done；保留 3.5 text/stash 配置兼容，仅文字输出 | 3.8 真实 API 静音文件联调通过；3.5 仅模拟协议验证 |
+| Whisper＋Qwen-MT | 本地确认原文和稳定预览以文字上传；增量译文可修订，最终识别后校正 | Qwen-MT flash 真实 API 文件联调通过；预览策略验收见 testing.md |
 | Windows AI Speech | 与传统 SpeechRecognition、Live Captions 私有实现区分 | 调研完成，基础版提供未集成诊断；实现和 MSIX 未完成 |
 | 安装包 | macOS 完整 .app + DMG；Windows Inno Setup + app-local VC runtime | macOS 测试 DMG 已生成；Windows 未生成 |
 
@@ -20,11 +21,11 @@
 
 千问连接模板：北京 `wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime`，新加坡 `wss://{WorkspaceId}.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/realtime`。Bearer 认证、model 查询参数；3.5 会话用 `modalities:["text"]`、`input_audio_format:"pcm"`、`sample_rate:16000`、`translation.language`。默认 server VAD，不重复手动 commit。停止发送 `session.finish`，等待 `session.finished` 或明确超时。
 
-`response.text.text` 的 text/stash 按官方当前示例覆盖可修订显示，`response.text.done` 的完整文本权威校正。文档称其“incremental”，示例却每次覆盖整行；当前解释已通过模拟事件测试，真实多事件语义仍需要 Key 验证。3.8 的 delta 协议没有混入这个适配器。连接失败不自动更换 provider、不上传本地回退、重连不补传旧音频。
+3.5 的 `response.text.text` text/stash 按示例覆盖可修订显示，`response.text.done` 的完整文本权威校正。3.8 使用独立 delta 解析器，`session.output_modalities` 与嵌套 `audio.input.turn_detection` 配置；源文/译文增量追加，done 校正完整文本，响应完成事件决定 final。两协议不共用增量语义。连接失败不自动更换 provider、不上传本地回退、重连不补传旧音频。当前 realtime 是 Qwen 专用协议适配，不能只改模型 ID 就调用其它厂商音频服务。
 
 [Qwen 官方模型与协议说明](https://www.alibabacloud.com/help/en/model-studio/qwen3-5-livetranslate-flash-realtime)、[客户端事件](https://www.alibabacloud.com/help/en/model-studio/live-translator-client-events)、[服务端事件](https://www.alibabacloud.com/help/en/model-studio/live-translator-server-events)、[Qwen-MT](https://www.alibabacloud.com/help/zh/model-studio/machine-translation)。服务端独立事件页 10-06 抓取失败；核心模型页的 3.5 事件与示例可访问。
 
-Qwen-MT 使用一个 user message 与 `translation_options`；OpenAI-compatible 适配器独立使用 system 翻译指令、user 原文，不提交 tools。自定义 header/数值参数有白名单。GUI 当前覆盖基础配置；术语表、上下文、流式开关与额外请求头目前只在适配器 API 中提供。
+Qwen-MT 使用一个 user message 与 `translation_options`；OpenAI-compatible 适配器独立使用 system 翻译指令、user 原文，不提交 tools。自定义 header/数值参数有白名单。文本翻译共享持久 HTTP client；单请求取消不关闭其它并发请求。稳定预览仍可能在后续识别中改写，匹配前缀不构成 ASR 的最终保证，因此预览译文仅供实时显示。GUI 当前覆盖基础配置；术语表、上下文和额外请求头目前只在适配器 API 中提供，控制器尚未自动传递上下文。
 
 ## 平台范围
 

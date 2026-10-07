@@ -159,7 +159,7 @@ final class ProvidersPage: FormPage, NSTextFieldDelegate {
             }
             if ["qwen-mt-flash", "gpt-4.1-mini"].contains(model.stringValue) { model.stringValue = value == "qwen" ? "qwen-mt-flash" : "gpt-4.1-mini" }
         }
-        group("文字翻译", rows: [("服务商", provider), ("API 地址", field("textBaseUrl")), ("模型", field("textModel"))], note: "声音留在本地，仅发送已确认的识别文本。此模式需要先准备本地模型。")
+        group("文字翻译", rows: [("服务商", provider), ("API 地址", field("textBaseUrl")), ("模型", field("textModel"))], note: "声音留在本地，稳定原文预览提前翻译，完成后校正。仅发送文字；预览可修订，不作为确认译文导出。此模式需要本地模型。")
         textGroups.append(stack.arrangedSubviews.last!)
         cloud = ToggleControl("云端转写原文") { [weak self] _ in self?.dirty = true }
         group("语言与连接", rows: [

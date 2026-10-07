@@ -10,14 +10,15 @@ class _Request {
     this.target,
     this.start,
     this.end,
-    this.order,
+    this.sourceRevision,
+    this.sourceFinal,
   );
   final String id, text, source, target;
   final Duration? start, end;
-  final int order;
+  final int sourceRevision;
+  final bool sourceFinal;
   final token = TranslationCancellation();
   TranslationEvent? result;
-  int revision = 0;
   int emittedRevision = 0;
   bool done = false;
 }
@@ -28,6 +29,7 @@ class TextTranslationQueue {
     required this.generation,
     required this.onEvent,
     this.onFailure,
+    this.onTiming,
     this.debounce = const Duration(milliseconds: 350),
     this.maxPending = 8,
   });
@@ -35,14 +37,24 @@ class TextTranslationQueue {
   int generation;
   final void Function(TranslationEvent) onEvent;
   final void Function(TranslationFailure)? onFailure;
+  final void Function(
+    String segmentId,
+    int sourceRevision,
+    TranslationRequestTiming timing,
+  )?
+  onTiming;
   final Duration debounce;
   final int maxPending;
   final List<_Request> _requests = [];
+  final Map<String, _Request> _current = {};
+  final Map<String, int> _revisions = {};
   final LinkedHashMap<String, String> _cache = LinkedHashMap();
-  int _active = 0, _next = 0;
+  final Set<_Request> _started = {};
+  int _active = 0;
   bool _disposed = false;
   Timer? _timer;
   final List<Completer<void>> _drainers = [];
+
   void submit(
     String id,
     String text, {
@@ -50,99 +62,147 @@ class TextTranslationQueue {
     String targetLanguage = 'Chinese',
     Duration? audioStart,
     Duration? audioEnd,
+    int sourceRevision = 0,
+    bool sourceFinal = true,
   }) {
     if (_disposed) return;
-    if (_requests.length >= maxPending) {
+    final old = _current[id];
+    if (old == null && _requests.length >= maxPending) {
       onFailure?.call(
         const TranslationFailure('queue_full', '文本翻译队列已满，当前片段未上传；请缩短分段或稍后重试。'),
       );
       return;
     }
-    for (final old in _requests.where((r) => r.id == id)) {
-      old.token.cancel();
-      old.done = true;
-    }
-    _requests.add(
-      _Request(
-        id,
-        text,
-        sourceLanguage,
-        targetLanguage,
-        audioStart,
-        audioEnd,
-        _next++,
-      ),
+    final request = _Request(
+      id,
+      text,
+      sourceLanguage,
+      targetLanguage,
+      audioStart,
+      audioEnd,
+      sourceRevision,
+      sourceFinal,
     );
+    // A rewritten preview keeps its logical queue position and capacity slot.
+    _current[id] = request;
+    if (old != null) {
+      final index = _requests.indexOf(old);
+      if (index < 0) {
+        // An event callback may submit a correction while the previous result
+        // is being removed from the ordered queue.
+        _requests.add(request);
+      } else {
+        _requests[index] = request;
+      }
+      old.token.cancel();
+    } else {
+      _requests.add(request);
+    }
     _timer?.cancel();
-    _timer = Timer(debounce, _pump);
+    if (debounce == Duration.zero) {
+      _pump();
+    } else {
+      _timer = Timer(debounce, _pump);
+    }
   }
 
+  void cancelSegment(String id) {
+    final request = _current.remove(id);
+    if (request == null) return;
+    _requests.remove(request);
+    request.token.cancel();
+    _pump();
+  }
+
+  bool _isCurrent(_Request request, int g) =>
+      !_disposed &&
+      g == generation &&
+      identical(_current[request.id], request) &&
+      !request.token.isCanceled;
+
   void _pump() {
-    if (_disposed) return;
+    if (_disposed) {
+      _checkDrained();
+      return;
+    }
     _emitOrdered();
     while (_active < 2) {
-      final waiting = _requests
-          .where((r) => !r.done && !r.token.isCanceled && r.order >= 0)
-          .where((r) => !_started.contains(r));
+      final waiting = _requests.where(
+        (r) => !r.done && !r.token.isCanceled && !_started.contains(r),
+      );
       if (waiting.isEmpty) break;
-      final r = waiting.first;
-      _started.add(r);
+      final request = waiting.first;
+      _started.add(request);
       _active++;
-      unawaited(_run(r, generation));
+      unawaited(_run(request, generation));
     }
     _checkDrained();
   }
 
-  final Set<_Request> _started = {};
-  Future<void> _run(_Request r, int g) async {
+  Future<void> _run(_Request request, int g) async {
+    final canceled = Completer<String>();
+    final removeCancel = request.token.onCancel(() {
+      if (!canceled.isCompleted) {
+        canceled.completeError(
+          const TranslationFailure('canceled', '文本翻译已取消。'),
+        );
+      }
+    });
     try {
-      final key = '${r.source}\u0000${r.target}\u0000${r.text}';
+      final key =
+          '${request.source}\u0000${request.target}\u0000${request.text}';
       final text =
           _cache[key] ??
-          await adapter.translate(
-            r.text,
-            sourceLanguage: r.source,
-            targetLanguage: r.target,
-            cancellation: r.token,
-            onPartial: (partial) {
-              if (_disposed ||
-                  g != generation ||
-                  r.token.isCanceled ||
-                  partial.isEmpty) {
-                return;
-              }
-              r.result = _result(r, g, partial, isFinal: false);
-              _emitOrdered();
-            },
-          );
-      if (_disposed || g != generation || r.token.isCanceled) return;
+          await Future.any<String>([
+            adapter.translate(
+              request.text,
+              sourceLanguage: request.source,
+              targetLanguage: request.target,
+              cancellation: request.token,
+              onPartial: (partial) {
+                if (!_isCurrent(request, g) ||
+                    request.done ||
+                    partial.isEmpty) {
+                  return;
+                }
+                request.result = _result(request, g, partial, isFinal: false);
+                _emitOrdered();
+              },
+              onTiming: (timing) {
+                if (!_disposed &&
+                    g == generation &&
+                    identical(_current[request.id], request)) {
+                  onTiming?.call(request.id, request.sourceRevision, timing);
+                }
+              },
+            ),
+            canceled.future,
+          ]);
+      if (!_isCurrent(request, g)) return;
       _cache[key] = text;
       if (_cache.length > 128) _cache.remove(_cache.keys.first);
-      r.result = _result(r, g, text, isFinal: true);
-    } catch (e) {
-      // A partial remains provisional when its request does not complete.
-      if (r.result != null && !r.result!.isFinal) {
-        r.result = TranslationEvent(
-          generation: g,
-          segmentId: r.id,
-          revision: ++r.revision,
-          text: r.result!.text,
+      request.result = _result(request, g, text, isFinal: request.sourceFinal);
+    } catch (error) {
+      if (!_isCurrent(request, g)) return;
+      // An interrupted response never confirms its provisional text.
+      if (request.result != null && !request.result!.isFinal) {
+        request.result = _result(
+          request,
+          g,
+          request.result!.text,
           isFinal: false,
           interrupted: true,
-          audioStart: r.start,
-          audioEnd: r.end,
-          engine: adapter.capabilities.id,
         );
       }
-      if (!_disposed && g == generation && !r.token.isCanceled) {
-        onFailure?.call(
-          e is TranslationFailure
-              ? e
-              : const TranslationFailure('translation', '文本翻译失败'),
-        );
-      }
+      onFailure?.call(
+        error is TranslationFailure
+            ? error
+            : const TranslationFailure('translation', '文本翻译失败'),
+      );
     } finally {
-      r.done = true;
+      removeCancel();
+      request.done = true;
+      _started.remove(request);
       _active--;
       _pump();
     }
@@ -153,22 +213,32 @@ class TextTranslationQueue {
     int g,
     String text, {
     required bool isFinal,
-  }) => TranslationEvent(
-    generation: g,
-    segmentId: request.id,
-    revision: ++request.revision,
-    text: text,
-    isFinal: isFinal,
-    audioStart: request.start,
-    audioEnd: request.end,
-    engine: adapter.capabilities.id,
-  );
+    bool interrupted = false,
+  }) {
+    final revision = (_revisions[request.id] ?? 0) + 1;
+    _revisions[request.id] = revision;
+    return TranslationEvent(
+      generation: g,
+      segmentId: request.id,
+      revision: revision,
+      text: text,
+      isFinal: isFinal,
+      interrupted: interrupted,
+      audioStart: request.start,
+      audioEnd: request.end,
+      sourceRevision: request.sourceRevision,
+      sourceFinal: request.sourceFinal,
+      engine: adapter.capabilities.id,
+    );
+  }
 
   void _emitOrdered() {
     while (_requests.isNotEmpty && _requests.first.done) {
-      final r = _requests.removeAt(0);
-      _started.remove(r);
-      _emitRequest(r);
+      final request = _requests.removeAt(0);
+      _emitRequest(request);
+      if (identical(_current[request.id], request)) {
+        _current.remove(request.id);
+      }
     }
     if (_requests.isNotEmpty) _emitRequest(_requests.first);
   }
@@ -176,7 +246,7 @@ class TextTranslationQueue {
   void _emitRequest(_Request request) {
     final result = request.result;
     if (result == null ||
-        request.token.isCanceled ||
+        !_isCurrent(request, result.generation) ||
         result.revision <= request.emittedRevision) {
       return;
     }
@@ -186,8 +256,8 @@ class TextTranslationQueue {
 
   void _checkDrained() {
     if (_requests.isEmpty && _active == 0) {
-      for (final c in _drainers) {
-        if (!c.isCompleted) c.complete();
+      for (final completer in _drainers) {
+        if (!completer.isCompleted) completer.complete();
       }
       _drainers.clear();
     }
@@ -198,18 +268,20 @@ class TextTranslationQueue {
     _timer?.cancel();
     _pump();
     if (_requests.isEmpty && _active == 0) return Future.value();
-    final c = Completer<void>();
-    _drainers.add(c);
-    return c.future;
+    final completer = Completer<void>();
+    _drainers.add(completer);
+    return completer.future;
   }
 
   void changeGeneration(int g) {
-    for (final r in _requests) {
-      r.token.cancel();
+    _timer?.cancel();
+    _current.clear();
+    for (final request in _requests) {
+      request.token.cancel();
     }
     _requests.clear();
-    _started.clear();
     _cache.clear();
+    _revisions.clear();
     generation = g;
     _checkDrained();
   }
@@ -217,8 +289,9 @@ class TextTranslationQueue {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
-    for (final r in _requests) {
-      r.token.cancel();
+    _current.clear();
+    for (final request in _requests) {
+      request.token.cancel();
     }
     _requests.clear();
     _checkDrained();
