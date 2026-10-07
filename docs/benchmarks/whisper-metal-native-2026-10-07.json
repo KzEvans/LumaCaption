@@ -186,9 +186,10 @@
     "gpuCache": "Previously initialized; these model loads are not first-install cold startup."
   },
   "pacedOnlineBenchmark": {
-    "status": "pendingKeychainAuthorization",
-    "scope": "base and small local ASR plus qwen-mt-flash; no new end-to-end results yet",
-    "inputAudioStarted": false,
-    "diagnosis": "Main thread waiting in SecItemCopyMatching; SecurityAgent requires user interaction."
+    "status": "completed",
+    "report": "whisper-metal-2026-10-07.json",
+    "scope": "base and small local ASR plus qwen-mt-flash, three paced public-fixture runs per model",
+    "inputAudioStarted": true,
+    "preparationNote": "First base run includes system Keychain authorization wait; retained separately in the paced report."
   }
 }
