@@ -24,13 +24,13 @@
 ### 验证与限制
 
 - macOS arm64 已构建，采用 ad-hoc 签名，未进行 Developer ID 签名或公证。Whisper 权重不随包提供。
-- 500ms 为预览调度间隔，不是最终译文延迟承诺。公开短样本的实时节奏对照见 [发布分支测试记录](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md)。
+- 500ms 为预览调度间隔，不是最终译文延迟承诺。公开短样本的实时节奏对照见 [发布分支测试记录](https://github.com/KzEvans/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md)。
 - Windows 安装包与实机、麦克风真实录音、完整悬浮窗手工交互及多显示器/全屏场景尚未完成验收。
 - 开发包更新可能需要系统对当前副本重新授权。系统共享提示的位置由 macOS 管理。
 
 ## 尚未发布的分支
 
-- **`codex/vad-endpoint-drain`（0.1.0+8 实验）**：Silero VAD、384ms 非语音端点、过时在途预览取消、正常暂停/停止排空已收到的音频，保留真实末尾余量。VAD 判断声音活动，可能在语义未完整时切句；真实 EOF 收尾尚未改善，未纳入本次 Release。见 [实验说明](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/vad-endpoint-drain/docs/vad-endpoint.md)。
+- **`codex/vad-endpoint-drain`（0.1.0+8 实验）**：Silero VAD、384ms 非语音端点、过时在途预览取消、正常暂停/停止排空已收到的音频，保留真实末尾余量。VAD 判断声音活动，可能在语义未完整时切句；真实 EOF 收尾尚未改善，未纳入本次 Release。见 [实验说明](https://github.com/KzEvans/LumaCaption/blob/codex/vad-endpoint-drain/docs/vad-endpoint.md)。
 - **`codex/windows-material3`**：Windows Material 3 界面方向，保留 CPU Whisper；等待 Windows 编译与设备验收。
 
 ## 早期共享基线（2026-10-06）
