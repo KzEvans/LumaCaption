@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../core/models/model_manager.dart';
 import '../core/subtitles/subtitles.dart';
 import 'controller.dart';
-import 'mac_chrome.dart';
 import 'design.dart';
 
 class LumaApp extends StatefulWidget {
@@ -40,9 +39,8 @@ class _LumaAppState extends State<LumaApp> {
 }
 
 class Shell extends StatefulWidget {
-  const Shell({super.key, required this.c, this.useNativeChrome = true});
+  const Shell({super.key, required this.c});
   final AppController c;
-  final bool useNativeChrome;
   @override
   State<Shell> createState() => _ShellState();
 }
@@ -52,31 +50,6 @@ class _ShellState extends State<Shell> {
   int? historySession;
   AppController get c => widget.c;
   Color get accent => Theme.of(context).colorScheme.primary;
-  MacChromeCoordinator? _chrome;
-  bool get nativeChrome => widget.useNativeChrome && Platform.isMacOS;
-  @override
-  void initState() {
-    super.initState();
-    if (nativeChrome) {
-      _chrome = MacChromeCoordinator(c: c, navigate: _navigate);
-      c.addListener(_syncChrome);
-      _syncChrome();
-    }
-  }
-
-  void _syncChrome() => _chrome?.sync(page);
-  void _navigate(int value) {
-    setState(() => page = value);
-    _syncChrome();
-  }
-
-  @override
-  void dispose() {
-    c.removeListener(_syncChrome);
-    _chrome?.dispose();
-    super.dispose();
-  }
-
   final labels = ['实时字幕', '模型管理', '翻译服务', '字幕外观', '历史与导出', '设置与诊断'];
   final icons = [
     Icons.subtitles_outlined,
@@ -102,123 +75,116 @@ class _ShellState extends State<Shell> {
     child: Focus(
       autofocus: true,
       child: Scaffold(
-        body: nativeChrome
-            ? _workspace(toolbar: false)
-            : Row(
+        body: Row(
+          children: [
+            Container(
+              width: 224,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                border: Border(
+                  right: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    width: 224,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.surfaceContainerLow,
-                      border: Border(
-                        right: BorderSide(
-                          color: Theme.of(context).dividerColor,
-                        ),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
+                    child: Row(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 33,
-                                height: 33,
-                                decoration: BoxDecoration(
-                                  color: accent,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                  Icons.closed_caption_outlined,
-                                  color: Colors.white,
-                                  size: 21,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              const Expanded(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    'LumaCaption',
-                                    style: TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w600,
-                                      letterSpacing: -.4,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                        Container(
+                          width: 33,
+                          height: 33,
+                          decoration: BoxDecoration(
+                            color: accent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.closed_caption_outlined,
+                            color: Colors.white,
+                            size: 21,
                           ),
                         ),
-                        for (var i = 0; i < labels.length; i++)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 3,
-                            ),
-                            child: Material(
-                              color: page == i
-                                  ? accent.withValues(alpha: .12)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(9),
-                              child: ListTile(
-                                dense: true,
-                                minLeadingWidth: 20,
-                                leading: Icon(
-                                  icons[i],
-                                  size: 20,
-                                  color: page == i ? accent : null,
-                                ),
-                                title: Text(
-                                  labels[i],
-                                  style: TextStyle(
-                                    fontWeight: page == i
-                                        ? FontWeight.w600
-                                        : FontWeight.w400,
-                                    color: page == i ? accent : null,
-                                  ),
-                                ),
-                                selected: page == i,
-                                onTap: () => setState(() => page = i),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(9),
-                                ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'LumaCaption',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -.4,
                               ),
                             ),
-                          ),
-                        const Spacer(),
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '让理解，跟上声音。',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              const Text(
-                                '桌面版 0.1.0',
-                                style: TextStyle(fontSize: 11),
-                              ),
-                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  Expanded(child: _workspace(toolbar: true)),
+                  for (var i = 0; i < labels.length; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 3,
+                      ),
+                      child: Material(
+                        color: page == i
+                            ? accent.withValues(alpha: .12)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        child: ListTile(
+                          dense: true,
+                          minLeadingWidth: 20,
+                          leading: Icon(
+                            icons[i],
+                            size: 20,
+                            color: page == i ? accent : null,
+                          ),
+                          title: Text(
+                            labels[i],
+                            style: TextStyle(
+                              fontWeight: page == i
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              color: page == i ? accent : null,
+                            ),
+                          ),
+                          selected: page == i,
+                          onTap: () => setState(() => page = i),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '让理解，跟上声音。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text('桌面版 0.1.0', style: TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
+            ),
+            Expanded(child: _workspace(toolbar: true)),
+          ],
+        ),
       ),
     ),
   );

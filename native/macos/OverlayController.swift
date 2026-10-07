@@ -10,7 +10,8 @@ private final class CaptionView: NSView {
     let original = NSTextField(wrappingLabelWithString: "")
     let translation = NSTextField(wrappingLabelWithString: "")
     let hint = NSTextField(labelWithString: "LumaCaption · 拖动移动 · 右下角调整大小")
-    var backgroundOpacity: CGFloat = 0.78 { didSet { needsDisplay = true } }
+    let glass = LiquidGlassSurface(frame: .zero)
+    var backgroundOpacity: CGFloat = 0.78 { didSet { glass.materialOpacity = backgroundOpacity } }
     private var resizeOrigin: NSPoint?
     private var resizeFrame: NSRect?
     override var isFlipped: Bool { true }
@@ -18,6 +19,7 @@ private final class CaptionView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
+        pin(glass, in: self)
         for label in [hint, original, translation] {
             label.translatesAutoresizingMaskIntoConstraints = false
             label.isSelectable = false
@@ -26,11 +28,17 @@ private final class CaptionView: NSView {
             addSubview(label)
         }
         hint.font = .systemFont(ofSize: 10, weight: .medium)
-        hint.textColor = .white.withAlphaComponent(0.5)
-        original.textColor = .white.withAlphaComponent(0.8)
-        translation.textColor = .white
+        hint.textColor = .secondaryLabelColor
+        original.textColor = .secondaryLabelColor
+        translation.textColor = .labelColor
         original.font = .systemFont(ofSize: 21, weight: .medium)
         translation.font = .systemFont(ofSize: 26, weight: .semibold)
+        let grip = nativeSymbol("arrow.up.left.and.arrow.down.right", size: 10)
+        addSubview(grip); grip.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            grip.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
+            grip.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+        ])
         NSLayoutConstraint.activate([
             hint.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             hint.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
@@ -46,22 +54,10 @@ private final class CaptionView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor(white: 0.045, alpha: backgroundOpacity).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 16, yRadius: 16).fill()
-        NSColor.white.withAlphaComponent(0.16).setStroke()
-        let border = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 16, yRadius: 16)
-        border.lineWidth = 1
-        border.stroke()
-        if !(window?.ignoresMouseEvents ?? false) {
-            let grip = NSBezierPath()
-            for offset in [0.0, 5.0, 10.0] {
-                grip.move(to: NSPoint(x: bounds.width - 19 + offset, y: bounds.height - 6))
-                grip.line(to: NSPoint(x: bounds.width - 6, y: bounds.height - 19 + offset))
-            }
-            NSColor.white.withAlphaComponent(0.4).setStroke()
-            grip.stroke()
-        }
+    // Captions are passive text. Keep the entire glass surface draggable,
+    // including its material and label subviews; the panel handles click-through.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        bounds.contains(convert(point, from: superview)) ? self : nil
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -121,7 +117,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         ["visible": panel.isVisible, "clickThrough": panel.ignoresMouseEvents,
          "isKeyWindow": panel.isKeyWindow, "canBecomeKey": panel.canBecomeKey,
          "opaque": panel.isOpaque, "shortcutRegistered": hotKey != nil,
-         "width": panel.frame.width, "height": panel.frame.height]
+         "width": panel.frame.width, "height": panel.frame.height, "material": captions.glass.materialName]
     }
     func update(original: String, translation: String) {
         self.original = original
@@ -129,6 +125,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
         renderText()
     }
     func configure(_ options: [String: Any]) {
+        if let theme = options["theme"] as? String {
+            panel.appearance = theme == "dark" ? NSAppearance(named: .darkAqua) : theme == "light" ? NSAppearance(named: .aqua) : nil
+        }
         if let value = options["fontSize"] as? NSNumber {
             let size = CGFloat(max(12, min(72, value.doubleValue)))
             captions.original.font = .systemFont(ofSize: size * 0.8, weight: .medium)

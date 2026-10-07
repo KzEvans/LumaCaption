@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app/controller.dart';
 import 'app/shell.dart';
+import 'app/mac_workbench.dart';
 import 'core/subtitles/subtitles.dart';
 
 void main(List<String> args) {
@@ -19,7 +20,12 @@ void main(List<String> args) {
       model = option('test-model'),
       output = option('test-output');
   controller.testMode = wav != null || source != null;
-  runApp(LumaApp(controller: controller));
+  if (Platform.isMacOS) {
+    MacWorkbenchCoordinator(controller);
+    unawaited(controller.initialize());
+  } else {
+    runApp(LumaApp(controller: controller));
+  }
   if (controller.testMode) {
     unawaited(() async {
       Future<void> report(Map<String, dynamic> values) async {

@@ -37,7 +37,7 @@ void main() {
     (const Size(860, 650), Brightness.light, 1.25),
     (const Size(860, 650), Brightness.dark, 1.0),
   ]) {
-    testWidgets('macOS content pages at $size $brightness scale $scale', (
+    testWidgets('Flutter fallback pages at $size $brightness scale $scale', (
       tester,
     ) async {
       tester.view.physicalSize = size;
@@ -61,7 +61,7 @@ void main() {
                 ),
                 child: child!,
               ),
-              home: Shell(c: c, useNativeChrome: false),
+              home: Shell(c: c),
             ),
           ),
         );

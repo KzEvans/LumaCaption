@@ -630,6 +630,7 @@ class AppController extends ChangeNotifier {
       'opacity': settings.opacity,
       'clickThrough': clickThrough,
       'display': settings.display,
+      'theme': settings.theme,
     });
     await save();
   }
@@ -677,7 +678,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> clearHistory() async {
     subtitles.segments.clear();
-    await HistoryStore(supportDirectory).clear();
+    if (!testMode) await HistoryStore(supportDirectory).clear();
     _historyReadable = true;
     notifyListeners();
   }

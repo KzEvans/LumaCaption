@@ -10,6 +10,7 @@ final class NativeBridge: NSObject, FlutterStreamHandler {
     private var sink: FlutterEventSink?
     private let channel: FlutterMethodChannel
     private let events: FlutterEventChannel
+    weak var mainWindow: NSWindow?
     init(messenger: FlutterBinaryMessenger) {
         channel = FlutterMethodChannel(name: "lumacaption/native", binaryMessenger: messenger)
         events = FlutterEventChannel(name: "lumacaption/audio", binaryMessenger: messenger)
@@ -62,14 +63,18 @@ final class NativeBridge: NSObject, FlutterStreamHandler {
                 panel.canChooseDirectories = method == "files.pickDirectory"; panel.canChooseFiles = !panel.canChooseDirectories
                 if method == "files.pickModel" { panel.allowedContentTypes = [UTType(filenameExtension: "bin") ?? .data] }
                 if method == "files.pickAudio" { panel.allowedContentTypes = [.wav] }
-                panel.begin { response in result(response == .OK ? panel.url?.path : nil) }
+                let completion: (NSApplication.ModalResponse) -> Void = { response in result(response == .OK ? panel.url?.path : nil) }
+                if let window = mainWindow { panel.beginSheetModal(for: window, completionHandler: completion) }
+                else { panel.begin(completionHandler: completion) }
             case "files.saveText":
                 let panel = NSSavePanel(); panel.nameFieldStringValue = args["suggestedName"] as? String ?? "LumaCaption.txt"
-                panel.begin { response in
+                let completion: (NSApplication.ModalResponse) -> Void = { response in
                     guard response == .OK, let url = panel.url else { result(nil); return }
                     do { try (args["text"] as? String ?? "").write(to: url, atomically: true, encoding: .utf8); result(url.path) }
                     catch { result(FlutterError(code: "save", message: error.localizedDescription, details: nil)) }
                 }
+                if let window = mainWindow { panel.beginSheetModal(for: window, completionHandler: completion) }
+                else { panel.begin(completionHandler: completion) }
             case "openPath":
                 guard let path = args["path"] as? String, FileManager.default.fileExists(atPath: path) else { throw NSError(domain: "LumaCaption", code: 1, userInfo: [NSLocalizedDescriptionKey: "文件或目录不存在"]) }
                 NSWorkspace.shared.open(URL(fileURLWithPath: path)); result(nil)
