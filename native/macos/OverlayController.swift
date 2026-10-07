@@ -85,6 +85,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var original = ""
+    private var stableOriginal = ""
     private var translation = ""
     private var display = "bilingual"
     var onCommand: ((String) -> Void)?
@@ -119,8 +120,9 @@ final class OverlayController: NSObject, NSWindowDelegate {
          "opaque": panel.isOpaque, "shortcutRegistered": hotKey != nil,
          "width": panel.frame.width, "height": panel.frame.height, "material": captions.glass.materialName]
     }
-    func update(original: String, translation: String) {
+    func update(original: String, stableOriginal: String, translation: String) {
         self.original = original
+        self.stableOriginal = stableOriginal
         self.translation = translation
         renderText()
     }
@@ -147,7 +149,16 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
 
     private func renderText() {
-        captions.original.stringValue = display == "translation" ? "" : original
+        let source = display == "translation" ? "" : original
+        let styled = NSMutableAttributedString(string: source, attributes: [
+            .font: captions.original.font ?? NSFont.systemFont(ofSize: 21, weight: .medium),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ])
+        if !source.isEmpty && source.utf16.starts(with: stableOriginal.utf16) && !stableOriginal.isEmpty {
+            styled.addAttribute(.foregroundColor, value: NSColor.labelColor,
+                                range: NSRange(location: 0, length: (stableOriginal as NSString).length))
+        }
+        captions.original.attributedStringValue = styled
         captions.translation.stringValue = display == "original" ? "" : translation
         panel.contentView?.needsLayout = true
     }

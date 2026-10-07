@@ -2,6 +2,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumacaption/core/subtitles/subtitles.dart';
 
 void main() {
+  test('stable original defaults empty and survives translation updates', () {
+    const defaultSource = SubtitleSegment(generation: 1, segmentId: 'default');
+    expect(defaultSource.stableOriginal, isEmpty);
+    const source = SubtitleSegment(
+      generation: 1,
+      segmentId: 'local:preview',
+      original: 'Your country needs your help',
+      stableOriginal: 'Your country needs',
+    );
+    final partial = source.translated('你的国家需要', translationFinal: false);
+    final interrupted = partial.translated(
+      '你的国家需要',
+      translationFinal: false,
+      interrupted: true,
+    );
+    final completed = interrupted.translated('你的国家需要你的帮助。');
+    for (final updated in [partial, interrupted, completed]) {
+      expect(updated.stableOriginal, 'Your country needs');
+      expect(updated.original, source.original);
+      expect(updated.isFinal, false);
+      expect(exportSubtitles([updated]), isEmpty);
+    }
+  });
+
   test(
     'streaming translation stays provisional while original is confirmed',
     () {
@@ -9,6 +33,7 @@ void main() {
         generation: 1,
         segmentId: 'local:1',
         original: 'A confirmed sentence.',
+        stableOriginal: 'A confirmed sentence.',
         isFinal: true,
       );
       final store = SubtitleStore()..reset(1);
@@ -16,6 +41,7 @@ void main() {
       final partial = source.translated('暂定译文', translationFinal: false);
       expect(store.put(partial), isTrue);
       expect(partial.isFinal, isTrue);
+      expect(partial.stableOriginal, source.original);
       expect(partial.stash, '暂定译文');
       expect(exportSubtitles(store.segments), 'A confirmed sentence.');
       final interrupted = partial.translated(
@@ -28,6 +54,7 @@ void main() {
       final finalText = partial.translated('已确认的译文。');
       expect(store.put(finalText), isTrue);
       expect(finalText.stash, isEmpty);
+      expect(finalText.stableOriginal, source.original);
       expect(exportSubtitles(store.segments), contains('已确认的译文。'));
     },
   );

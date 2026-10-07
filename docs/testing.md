@@ -2,7 +2,7 @@
 
 更新：2026-10-07。这里区分源码实现、模拟协议测试、真实模型运行和设备验收。
 
-## Metal 与词级稳定预览（2026-10-07，当前包）
+## Metal 与词级稳定预览（2026-10-07，0.1.0+6 历史记录）
 
 源码实现 `6ca9d6f`，包版本 `0.1.0+6`，已安装到 `/Applications/LumaCaption.app`。macOS 使用 Metal，GPU 内核源码嵌入本地 dylib，不依赖工作目录、外置资源或用户安装 Metal 编译工具；初始化失败时保留 CPU 回退。后端名称依据 whisper.cpp 实际初始化记录，不能仅根据构建开关宣称 GPU 正在使用。Dart/native ABI 同步升级为 2；Windows 仍为 CPU。
 

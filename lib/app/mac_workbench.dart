@@ -86,6 +86,7 @@ class MacWorkbenchCoordinator {
               'startUs': s.startUs,
               'endUs': s.endUs,
               'original': s.original,
+              'stableOriginal': s.stableOriginal,
               'translation': s.translation + s.stash,
               'translationPreview': s.stash.isNotEmpty,
               'final': s.isFinal,

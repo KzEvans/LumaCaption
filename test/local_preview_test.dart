@@ -67,6 +67,82 @@ void main() {
     },
   );
 
+  test(
+    'stable source updates independently of throttled translation requests',
+    () {
+      final p = LocalPreviewPipeline()..reset(1);
+      final first = p.source(source(1, 'And so my fellow', endUs: 1000000))!;
+      expect(first.segment.stableOriginal, isEmpty);
+      final second = p.source(
+        source(2, 'And so my fellow Americans', endUs: 1500000),
+      )!;
+      expect(second.segment.stableOriginal, 'And so my');
+      expect(second.segment.isFinal, false);
+      expect(second.request!.source.stableOriginal, second.request!.text);
+      expect(exportSubtitles([second.segment]), isEmpty);
+
+      final growing = p.source(
+        source(3, 'And so my fellow Americans ask', endUs: 2000000),
+      )!;
+      expect(growing.request, isNull);
+      expect(growing.segment.stableOriginal, 'And so my fellow');
+      final translated = p.translated(target(2, '我的同胞们'))!;
+      expect(translated.stableOriginal, 'And so my fellow');
+      expect(translated.isFinal, false);
+      expect(exportSubtitles([translated]), isEmpty);
+    },
+  );
+
+  test(
+    'a real rewrite can retract the agreed source without claiming finality',
+    () {
+      final p = LocalPreviewPipeline()..reset(1);
+      p.source(source(1, 'You should ask your country now'));
+      final stable = p.source(source(2, 'You should ask your country now'))!;
+      expect(stable.segment.stableOriginal, 'You should ask your country');
+      p.translated(target(2, '你应该问你的国家'));
+
+      final rewrite = p.source(
+        source(3, 'You should not ask your country now'),
+      )!;
+      expect(rewrite.segment.stableOriginal, isEmpty);
+      expect(rewrite.segment.stash, isEmpty);
+      expect(rewrite.segment.isFinal, false);
+      expect(rewrite.cancelPending, true);
+      final settled = p.source(
+        source(4, 'You should not ask your country now'),
+      )!;
+      expect(settled.segment.stableOriginal, 'You should not ask your country');
+      expect(settled.segment.isFinal, false);
+      expect(exportSubtitles([settled.segment]), isEmpty);
+
+      final done = p.source(
+        source(5, 'You should not ask your country now.', finalSource: true),
+      )!;
+      expect(done.segment.stableOriginal, done.segment.original);
+      expect(done.segment.isFinal, true);
+      expect(exportSubtitles([done.segment]), done.segment.original);
+    },
+  );
+
+  test(
+    'stable display prefix retains current original whitespace and punctuation',
+    () {
+      final p = LocalPreviewPipeline()..reset(1);
+      p.source(source(1, 'Well I know your country needs you'));
+      const original = '  WELL,\tI know—your  country needs you!';
+      final update = p.source(source(2, original))!;
+      expect(
+        update.segment.stableOriginal,
+        '  WELL,\tI know—your  country needs',
+      );
+      expect(original.startsWith(update.segment.stableOriginal), true);
+      expect(original.substring(update.segment.stableOriginal.length), ' you!');
+      expect(update.request!.text, 'WELL, I know—your country needs');
+      expect(update.segment.isFinal, false);
+    },
+  );
+
   test('preview completion never confirms translation or enters export', () {
     final p = LocalPreviewPipeline()..reset(1);
     p.source(source(1, 'And so my fellow'));
@@ -175,6 +251,7 @@ void main() {
       expect(retracted.cancelPending, true);
       expect(retracted.request, isNull);
       expect(retracted.segment.original, isEmpty);
+      expect(retracted.segment.stableOriginal, isEmpty);
       expect(retracted.segment.stash, isEmpty);
       expect(p.translated(target(2, '迟到草稿', eventRevision: 2)), isNull);
       expect(exportSubtitles([retracted.segment]), isEmpty);

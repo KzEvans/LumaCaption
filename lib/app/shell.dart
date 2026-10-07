@@ -600,7 +600,7 @@ class _ShellState extends State<Shell> {
                       ? (s.isFinal ? '原文已确认 · 译文可修订' : '预览 · 可修订')
                       : s.isFinal
                       ? '已确认'
-                      : '识别中'),
+                      : '识别中 · 可修订'),
               style: const TextStyle(fontSize: 10),
             ),
             const Spacer(),
@@ -616,10 +616,7 @@ class _ShellState extends State<Shell> {
           Semantics(
             label: s.original,
             excludeSemantics: true,
-            child: SelectableText(
-              s.original,
-              style: const TextStyle(fontSize: 17, height: 1.65),
-            ),
+            child: _originalSubtitle(s),
           ),
         if (s.translation.isNotEmpty || s.stash.isNotEmpty)
           Padding(
@@ -648,6 +645,27 @@ class _ShellState extends State<Shell> {
       ],
     ),
   );
+  Widget _originalSubtitle(SubtitleSegment s) {
+    final colors = Theme.of(context).colorScheme;
+    final stable = s.isFinal
+        ? s.original
+        : s.original.startsWith(s.stableOriginal)
+        ? s.stableOriginal
+        : '';
+    return SelectableText.rich(
+      TextSpan(
+        style: TextStyle(fontSize: 17, height: 1.65, color: colors.onSurface),
+        children: [
+          TextSpan(text: stable),
+          TextSpan(
+            text: s.original.substring(stable.length),
+            style: TextStyle(color: colors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _models() {
     final m = c.models;
     if (m == null) return const Center(child: Text('模型目录不可用'));

@@ -30,6 +30,14 @@ void main() {
         if (expectedBackend != null) {
           expect(engine.backend, startsWith('$expectedBackend ·'));
         }
+        // Startup warmup is synthetic silence; discard its hypotheses, then
+        // verify the same resident worker can recognize real speech normally.
+        await engine.transcribe(
+          Float32List(16000),
+          language: 'en',
+          isFinal: false,
+        );
+        expect(engine.ready, true);
         final preview = await engine.transcribe(
           Float32List.sublistView(samples, 0, 16000 * 8),
           language: 'en',

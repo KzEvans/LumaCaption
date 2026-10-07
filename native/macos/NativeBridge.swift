@@ -49,7 +49,7 @@ final class NativeBridge: NSObject, FlutterStreamHandler {
             case "status": result(["running": audio.running])
             case "overlay.show": overlay.show(); result(nil)
             case "overlay.hide": overlay.hide(); result(nil)
-            case "overlay.update": overlay.update(original: args["original"] as? String ?? "", translation: args["translation"] as? String ?? ""); result(nil)
+            case "overlay.update": overlay.update(original: args["original"] as? String ?? "", stableOriginal: args["stableOriginal"] as? String ?? "", translation: args["translation"] as? String ?? ""); result(nil)
             case "overlay.configure": overlay.configure(args); result(nil)
             case "overlay.status": result(overlay.status())
             case "overlay.recover": overlay.recoverInteraction(); result(nil)

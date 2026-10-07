@@ -208,11 +208,18 @@ final class TranscriptView: NSView {
             let time = (segment["startUs"] as? NSNumber).map { String(format: "%02d:%02d", $0.intValue / 60000000, ($0.intValue / 1000000) % 60) } ?? "实时"
             let confirmed = segment["final"] as? Bool ?? false
             let preview = segment["translationPreview"] as? Bool ?? false
-            let label = preview ? (confirmed ? "原文已确认 · 译文可修订" : "预览 · 可修订") : (confirmed ? "已确认" : "识别中")
+            let label = preview ? (confirmed ? "原文已确认 · 译文可修订" : "预览 · 可修订") : (confirmed ? "已确认" : "识别中 · 可修订")
             let meta = "\(time)  ·  \(label)\n"
             value.append(NSAttributedString(string: meta, attributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular), .foregroundColor: NSColor.secondaryLabelColor]))
             let original = segment["original"] as? String ?? "", translation = segment["translation"] as? String ?? ""
-            if display != "translation", !original.isEmpty { append(original, size: display == "original" ? 20 : 17, to: value) }
+            if display != "translation", !original.isEmpty {
+                let start = value.length
+                append(original, size: display == "original" ? 20 : 17, to: value, color: confirmed ? .labelColor : .secondaryLabelColor)
+                let stable = segment["stableOriginal"] as? String ?? ""
+                if !confirmed, !stable.isEmpty, original.utf16.starts(with: stable.utf16) {
+                    value.addAttribute(.foregroundColor, value: NSColor.labelColor, range: NSRange(location: start, length: stable.utf16.count))
+                }
+            }
             if display != "original", !translation.isEmpty { append(translation, size: 20, to: value) }
             if let error = segment["error"] as? String, !error.isEmpty { append(error, size: 12, to: value, color: .systemRed) }
             value.append(NSAttributedString(string: "\n", attributes: [.font: NSFont.systemFont(ofSize: 13)]))

@@ -108,7 +108,7 @@ void main() {
       );
       final oneSecond = Float32List.fromList(List.filled(16000, .1));
       segmenter.observeInference(const Duration(milliseconds: 450));
-      expect(segmenter.previewInterval, const Duration(seconds: 1));
+      expect(segmenter.previewInterval, const Duration(microseconds: 562500));
       expect(segmenter.add(oneSecond, 0), isEmpty);
       final first = segmenter.add(oneSecond, 1000000).single;
       expect(first.endUs, 2000000);
@@ -116,6 +116,61 @@ void main() {
       expect(second.endUs, 3000000);
       expect(second.segmentId, first.segmentId);
       expect(second.isFinal, false);
+    },
+  );
+  test(
+    'aggressive adaptive previews start at one second then every half second',
+    () {
+      final segmenter = AudioSegmenter(
+        firstPreview: const Duration(seconds: 1),
+        previewInterval: const Duration(milliseconds: 500),
+        enableAdaptive: true,
+      );
+      final frame = Float32List.fromList(List.filled(1600, .1));
+      final chunks = <AudioChunk>[];
+      for (var i = 0; i < 80; i++) {
+        chunks.addAll(segmenter.add(frame, i * 100000));
+      }
+      expect(chunks.first.endUs, 1000000);
+      expect(
+        chunks.where((chunk) => !chunk.isFinal).map((chunk) => chunk.endUs),
+        orderedEquals(List.generate(14, (i) => 1000000 + i * 500000)),
+      );
+      expect(
+        chunks.every((chunk) => chunk.segmentId == chunks.first.segmentId),
+        true,
+      );
+      // Eight seconds is also due for a preview; the final takes precedence.
+      expect(chunks.last.isFinal, true);
+      expect(chunks.last.endUs, 8000000);
+      expect(chunks.where((chunk) => chunk.isFinal).length, 1);
+    },
+  );
+  test(
+    'aggressive cadence backs off under load then returns to half a second',
+    () {
+      final segmenter = AudioSegmenter(
+        firstPreview: const Duration(seconds: 1),
+        previewInterval: const Duration(milliseconds: 500),
+        enableAdaptive: true,
+      );
+      Float32List speech(int milliseconds) =>
+          Float32List.fromList(List.filled(milliseconds * 16, .1));
+      final first = segmenter.add(speech(1000), 0).single;
+      segmenter.observeInference(const Duration(seconds: 4));
+      expect(segmenter.previewInterval, const Duration(seconds: 3));
+      expect(segmenter.add(speech(2500), 1000000), isEmpty);
+      final slowed = segmenter.add(speech(500), 3500000).single;
+      expect(slowed.endUs, 4000000);
+      for (var i = 0; i < 13; i++) {
+        segmenter.observeInference(const Duration(milliseconds: 200));
+      }
+      expect(segmenter.previewInterval, const Duration(milliseconds: 500));
+      expect(segmenter.add(speech(400), 4000000), isEmpty);
+      final recovered = segmenter.add(speech(100), 4400000).single;
+      expect(recovered.endUs, 4500000);
+      expect(recovered.segmentId, first.segmentId);
+      expect(recovered.isFinal, false);
     },
   );
   test(
@@ -145,7 +200,7 @@ void main() {
     },
   );
   test(
-    'adaptive inference estimate recovers gradually within one to three seconds',
+    'adaptive inference estimate recovers gradually within half to three seconds',
     () {
       final segmenter = AudioSegmenter(enableAdaptive: true);
       segmenter.observeInference(const Duration(seconds: 4));
@@ -158,17 +213,17 @@ void main() {
         intervals.add(segmenter.previewInterval.inMicroseconds);
       }
       expect(
-        intervals.every((value) => value >= 1000000 && value <= 3000000),
+        intervals.every((value) => value >= 500000 && value <= 3000000),
         true,
       );
       expect(
         intervals,
         orderedEquals(intervals.toList()..sort((a, b) => b.compareTo(a))),
       );
-      expect(segmenter.previewInterval, const Duration(seconds: 1));
+      expect(segmenter.previewInterval, const Duration(milliseconds: 500));
       segmenter.observeInference(Duration.zero);
       segmenter.observeInference(const Duration(microseconds: -1));
-      expect(segmenter.previewInterval, const Duration(seconds: 1));
+      expect(segmenter.previewInterval, const Duration(milliseconds: 500));
     },
   );
   test('final decode observations gently adjust the preview cadence', () {

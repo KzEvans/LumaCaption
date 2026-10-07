@@ -22,6 +22,7 @@ class SessionTiming {
   final List<Map<String, Object?>> _events = [];
   int? _lastClockUs, _preparationUs, _readyUs, _audioUs, _eofUs, _stoppedUs;
   int? _firstSourceUs, _firstSourceFinalUs;
+  int? _firstStableSourceUs;
   int? _firstTranslationUs, _firstTranslationFinalUs;
   int? _lastSourceFinalUs, _lastTranslationFinalUs;
   int _frames = 0, _scheduledEndUs = 0, _latenessTotalUs = 0;
@@ -107,6 +108,7 @@ class SessionTiming {
     required int revision,
     required bool isFinal,
     int? audioEndUs,
+    int stableSourceChars = 0,
     int? generation,
   }) {
     if ((generation != null && generation != this.generation) ||
@@ -139,6 +141,7 @@ class SessionTiming {
     }
     if (channel == 'source') {
       _firstSourceUs ??= now;
+      if (stableSourceChars > 0) _firstStableSourceUs ??= now;
       if (firstFinal) {
         _firstSourceFinalUs ??= now;
         _lastSourceFinalUs = now;
@@ -157,6 +160,7 @@ class SessionTiming {
       'isFinal': isFinal,
       'firstFinal': firstFinal,
       'audioEndMs': _ms(audioEndUs),
+      if (channel == 'source') 'stableSourceChars': stableSourceChars,
     });
     return true;
   }
@@ -234,6 +238,7 @@ class SessionTiming {
     'setupMs': _difference(_readyUs, _preparationUs),
     'preparationMs': _difference(_audioUs, _preparationUs),
     'firstSourceMs': _difference(_firstSourceUs, _audioUs),
+    'firstStableSourceMs': _difference(_firstStableSourceUs, _audioUs),
     'firstSourceFinalMs': _difference(_firstSourceFinalUs, _audioUs),
     'firstTranslationMs': _difference(_firstTranslationUs, _audioUs),
     'firstTranslationFinalMs': _difference(_firstTranslationFinalUs, _audioUs),

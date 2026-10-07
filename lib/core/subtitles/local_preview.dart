@@ -59,11 +59,19 @@ class LocalPreviewPipeline {
     final text = _normalize(incoming.original);
     final pending = old?.request;
     final invalidated = pending != null && !_wordPrefix(pending.text, text);
+    final candidate = incoming.isFinal
+        ? text
+        : old == null
+        ? ''
+        : stablePrefix(old.source.original, text);
     final visible = SubtitleSegment(
       generation: incoming.generation,
       segmentId: incoming.segmentId,
       revision: (old?.visible.revision ?? 0) + 1,
       original: incoming.original,
+      stableOriginal: incoming.isFinal
+          ? incoming.original
+          : _displayPrefix(incoming.original, candidate),
       stash: invalidated ? '' : old?.visible.stash ?? '',
       isFinal: incoming.isFinal,
       startUs: incoming.startUs,
@@ -71,11 +79,6 @@ class LocalPreviewPipeline {
       engine: incoming.engine,
     );
     final state = old ?? _LocalPreview(incoming, visible);
-    final candidate = incoming.isFinal
-        ? text
-        : old == null
-        ? ''
-        : stablePrefix(old.source.original, text);
     final snapshotEnd = audioSnapshotEndUs ?? incoming.endUs;
     final elapsedAudio = snapshotEnd == null || state.lastPreviewEndUs == null
         ? null
@@ -96,6 +99,7 @@ class LocalPreviewPipeline {
           segmentId: incoming.segmentId,
           revision: incoming.revision,
           original: candidate,
+          stableOriginal: candidate,
           isFinal: incoming.isFinal,
           startUs: incoming.startUs,
           endUs: incoming.endUs,
@@ -145,6 +149,16 @@ class LocalPreviewPipeline {
 
   static String _normalize(String value) =>
       value.trim().replaceAll(RegExp(r'\s+'), ' ');
+
+  static String _displayPrefix(String original, String normalizedPrefix) {
+    if (normalizedPrefix.isEmpty) return '';
+    // Translation uses normalized whitespace, but the displayed prefix must
+    // index the current original exactly when the UI splits off its tail.
+    final count = _tokens(normalizedPrefix).length;
+    final originalTokens = _tokens(original);
+    return original.substring(0, originalTokens[count - 1].end);
+  }
+
   static final _word = RegExp(r'[\p{L}\p{M}\p{N}]', unicode: true);
   static final _cjk = RegExp(
     r'[\u3400-\u9fff\u{20000}-\u{323af}\u3040-\u30ff\uac00-\ud7af]',

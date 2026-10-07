@@ -4,6 +4,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumacaption/core/diagnostics/session_timing.dart';
 
 void main() {
+  test('stable source timing is separate from first hypothesis and final', () {
+    var us = 0;
+    final timing = SessionTiming(generation: 1, elapsedMicroseconds: () => us)
+      ..preparationStarted()
+      ..audioStarted();
+    us = 1100000;
+    timing.received(
+      segmentId: 'private',
+      channel: 'source',
+      revision: 1,
+      isFinal: false,
+    );
+    expect(timing.report()['firstStableSourceMs'], isNull);
+    us = 1700000;
+    timing.received(
+      segmentId: 'private',
+      channel: 'source',
+      revision: 2,
+      isFinal: false,
+      stableSourceChars: 12,
+    );
+    us = 2200000;
+    timing.received(
+      segmentId: 'private',
+      channel: 'source',
+      revision: 3,
+      isFinal: false,
+      stableSourceChars: 0,
+    );
+    us = 8000000;
+    timing.received(
+      segmentId: 'private',
+      channel: 'source',
+      revision: 4,
+      isFinal: true,
+      stableSourceChars: 60,
+    );
+    final report = timing.report();
+    expect(report['firstSourceMs'], 1100);
+    expect(report['firstStableSourceMs'], 1700);
+    expect(report['firstSourceFinalMs'], 8000);
+    expect(jsonEncode(report), isNot(contains('private')));
+  });
   test(
     'local inference trace separates duration and adaptive cadence without text',
     () {

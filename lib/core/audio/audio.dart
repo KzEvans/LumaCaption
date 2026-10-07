@@ -145,7 +145,7 @@ class AudioSegmenter {
        _previewInterval = enableAdaptive
            ? Duration(
                microseconds: previewInterval.inMicroseconds.clamp(
-                 1000000,
+                 500000,
                  3000000,
                ),
              )
@@ -167,7 +167,7 @@ class AudioSegmenter {
         ? observed
         : previous + (observed - previous) * weight;
     _previewInterval = Duration(
-      microseconds: (_inferenceUs! * 1.25).round().clamp(1000000, 3000000),
+      microseconds: (_inferenceUs! * 1.25).round().clamp(500000, 3000000),
     );
   }
 

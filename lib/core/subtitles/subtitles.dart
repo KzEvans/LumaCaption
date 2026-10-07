@@ -6,6 +6,7 @@ class SubtitleSegment {
     this.startUs,
     this.endUs,
     this.original = '',
+    this.stableOriginal = '',
     this.translation = '',
     this.stash = '',
     this.isFinal = false,
@@ -14,6 +15,10 @@ class SubtitleSegment {
   });
   final int generation, revision;
   final String segmentId, original, translation, stash, engine;
+
+  /// The current agreed prefix, not a finality promise. A new ASR hypothesis
+  /// may shorten or retract it; the remaining original text is still revisable.
+  final String stableOriginal;
   final int? startUs, endUs;
   final bool isFinal;
   final String? error;
@@ -28,6 +33,7 @@ class SubtitleSegment {
     startUs: startUs,
     endUs: endUs,
     original: original,
+    stableOriginal: stableOriginal,
     translation: translationFinal ? text : '',
     stash: translationFinal ? '' : text,
     isFinal: isFinal,

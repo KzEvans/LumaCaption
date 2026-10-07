@@ -123,6 +123,8 @@ void main(List<String> args) {
           'modelLoadMs': testMode == 'realtime'
               ? null
               : modelWatch.elapsedMilliseconds,
+          if (testMode != 'realtime')
+            'modelPreparation': controller.modelPreparationTiming,
           if (controller.sessionTiming != null)
             'timing': controller.sessionTiming!.report(),
           'backend': controller.whisper.backend,

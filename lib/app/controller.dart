@@ -36,6 +36,10 @@ class AppController extends ChangeNotifier {
   TextTranslationQueue? _textQueue;
   TextTranslator? _textAdapter;
   Future<void>? _inferenceTask;
+  Future<void>? _modelPreparation;
+  String? _preparingModelPath, _loadedModelPath;
+  bool _disposed = false;
+  Map<String, Object?>? modelPreparationTiming;
   bool initialized = false,
       running = false,
       paused = false,
@@ -126,6 +130,15 @@ class AppController extends ChangeNotifier {
     }
     initialized = true;
     notifyListeners();
+    if (!testMode &&
+        settings.mode != 'realtime' &&
+        settings.modelPath.isNotEmpty) {
+      unawaited(
+        _prepareModel(settings.modelPath).catchError((Object e) {
+          if (!_disposed) fail(e);
+        }),
+      );
+    }
   }
 
   void record(String message) {
@@ -220,19 +233,81 @@ class AppController extends ChangeNotifier {
   );
 
   Future<void> loadModel(String path) async {
-    if (running || busy) throw StateError('请先停止当前会话');
-    loadingModel = true;
-    notifyListeners();
-    try {
-      await _verifySelectedModel(path);
-      await whisper.load(path);
-      settings.modelPath = path;
-      await save();
-      status = '模型已就绪 · ${whisper.backend}';
-    } finally {
-      loadingModel = false;
-      notifyListeners();
+    if (running || busy || loadingModel) {
+      throw StateError('请等待模型准备完成并停止当前会话后再切换模型');
     }
+    await _prepareModel(path);
+    if (_disposed) return;
+    settings.modelPath = path;
+    await save();
+  }
+
+  // Start and model selection share one preparation operation. A preloaded
+  // model stays resident across sessions; synthetic warmup never enters audio,
+  // subtitle or translation pipelines.
+  Future<void> _prepareModel(String path) async {
+    while (_modelPreparation != null) {
+      final pending = _modelPreparation!;
+      final sameModel = _preparingModelPath == path;
+      await pending;
+      if (_disposed ||
+          (sameModel && whisper.ready && _loadedModelPath == path)) {
+        return;
+      }
+    }
+    if (_disposed || (whisper.ready && _loadedModelPath == path)) return;
+    loadingModel = true;
+    _preparingModelPath = path;
+    status = '正在预加载模型';
+    notifyListeners();
+    final operation = _runModelPreparation(path);
+    _modelPreparation = operation;
+    try {
+      await operation;
+    } finally {
+      _modelPreparation = null;
+      _preparingModelPath = null;
+      loadingModel = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  Future<void> _runModelPreparation(String path) async {
+    try {
+      await _loadAndWarmModel(path);
+    } catch (_) {
+      // Include failure cleanup in the shared operation. Disposal must wait
+      // for this close before attempting to close the worker again.
+      if (!_disposed) await whisper.close();
+      rethrow;
+    }
+  }
+
+  Future<void> _loadAndWarmModel(String path) async {
+    _loadedModelPath = null;
+    final watch = Stopwatch()..start();
+    await _verifySelectedModel(path);
+    final verifiedUs = watch.elapsedMicroseconds;
+    if (_disposed) return;
+    await whisper.load(path);
+    final loadedUs = watch.elapsedMicroseconds;
+    if (_disposed) return;
+    status = '正在静音暖机';
+    notifyListeners();
+    await whisper.transcribe(
+      Float32List(16000),
+      language: 'en',
+      isFinal: false,
+    );
+    if (_disposed) return;
+    modelPreparationTiming = {
+      'verificationMs': verifiedUs / 1000,
+      'nativeLoadMs': (loadedUs - verifiedUs) / 1000,
+      'warmupMs': (watch.elapsedMicroseconds - loadedUs) / 1000,
+      'totalMs': watch.elapsedMicroseconds / 1000,
+    };
+    _loadedModelPath = path;
+    status = '模型已就绪 · ${whisper.backend}';
   }
 
   Future<void> _verifySelectedModel(String path) async {
@@ -379,6 +454,7 @@ class AppController extends ChangeNotifier {
 
   Future<void> start({bool fileInput = false}) async {
     if (running || busy) return;
+    if (loadingModel && _preparingModelPath != settings.modelPath) return;
     busy = true;
     error = '';
     status = '准备音频与模型';
@@ -390,13 +466,15 @@ class AppController extends ChangeNotifier {
     try {
       // An aborted prior worker must finish before a new generation can use it.
       await _inferenceTask;
+      await _modelPreparation;
+      if (_disposed) return;
       if (settings.mode != 'realtime' && settings.modelPath.isEmpty) {
         throw StateError('请先在模型管理中下载或导入 Whisper 模型');
       }
       if (settings.modelPath.isNotEmpty && !whisper.ready) {
-        await _verifySelectedModel(settings.modelPath);
-        await whisper.load(settings.modelPath);
+        await _prepareModel(settings.modelPath);
       }
+      if (_disposed) return;
       generation++;
       subtitles.reset(generation);
       _localPreviews.reset(generation);
@@ -404,7 +482,8 @@ class AppController extends ChangeNotifier {
       converter.reset();
       segmenter = settings.mode == 'text'
           ? AudioSegmenter(
-              previewInterval: const Duration(seconds: 1),
+              firstPreview: const Duration(seconds: 1),
+              previewInterval: const Duration(milliseconds: 500),
               enableAdaptive: true,
             )
           : AudioSegmenter();
@@ -442,7 +521,7 @@ class AppController extends ChangeNotifier {
       status = '无法开始字幕';
       rethrow;
     } finally {
-      if (!fileInput) {
+      if (!fileInput && !_disposed) {
         try {
           await refreshPermissions();
         } catch (_) {
@@ -451,7 +530,7 @@ class AppController extends ChangeNotifier {
         }
       }
       busy = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -543,7 +622,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _infer(int g) async {
-    while (_chunks.isNotEmpty && g == generation) {
+    while (_chunks.isNotEmpty && g == generation && !_disposed) {
       final chunk = _chunks.take()!;
       final watch = Stopwatch()..start();
       try {
@@ -566,7 +645,7 @@ class AppController extends ChangeNotifier {
           ),
           isFinal: chunk.isFinal,
         );
-        if (g != generation) return;
+        if (g != generation || _disposed) return;
         final inferenceUs = watch.elapsedMicroseconds;
         segmenter.observeInference(
           Duration(microseconds: inferenceUs),
@@ -627,6 +706,7 @@ class AppController extends ChangeNotifier {
                 revision: chunk.revision,
                 isFinal: chunk.isFinal,
                 audioEndUs: end,
+                stableSourceChars: preview.segment.stableOriginal.length,
               );
             }
             if (chunk.isFinal && text.isNotEmpty) {
@@ -663,7 +743,7 @@ class AppController extends ChangeNotifier {
         _updateOverlay();
         notifyListeners();
       } catch (e) {
-        if (g == generation) fail(e);
+        if (g == generation && !_disposed) fail(e);
       }
     }
   }
@@ -814,10 +894,13 @@ class AppController extends ChangeNotifier {
   }
 
   void _updateOverlay() {
-    String original = '', translation = '';
+    String original = '', stableOriginal = '', translation = '';
     for (final s in subtitles.segments.reversed) {
       if (s.generation != generation) continue;
-      if (original.isEmpty && s.original.isNotEmpty) original = s.original;
+      if (original.isEmpty && s.original.isNotEmpty) {
+        original = s.original;
+        stableOriginal = s.isFinal ? s.original : s.stableOriginal;
+      }
       if (translation.isEmpty &&
           (s.translation.isNotEmpty || s.stash.isNotEmpty)) {
         translation = s.translation + s.stash;
@@ -828,6 +911,7 @@ class AppController extends ChangeNotifier {
       native
           .call<void>('overlay.update', {
             'original': original,
+            'stableOriginal': stableOriginal,
             'translation': translation,
           })
           .catchError((Object e) {
@@ -915,12 +999,21 @@ class AppController extends ChangeNotifier {
       code;
   @override
   void dispose() {
+    _disposed = true;
     _refresh?.cancel();
     _nativeSub?.cancel();
     _realtime?.dispose();
     _textQueue?.dispose();
     _textAdapter?.dispose();
-    whisper.close();
+    whisper.cancel();
+    final preparing = _modelPreparation;
+    if (preparing == null) {
+      unawaited(whisper.close());
+    } else {
+      unawaited(
+        preparing.catchError((Object _) {}).then((_) => whisper.close()),
+      );
+    }
     models?.dispose();
     super.dispose();
   }

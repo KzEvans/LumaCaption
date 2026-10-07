@@ -154,6 +154,40 @@ Future<void> _turn() => Future<void>.delayed(Duration.zero);
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  for (final fails in [false, true]) {
+    test(
+      'disposed controller ignores pending decode ${fails ? "error" : "result"}',
+      () async {
+        final h = await _Harness.create();
+        var disposed = false;
+        try {
+          await h.controller.start();
+          h.native.frames(20);
+          final decode = h.whisper.calls.single;
+          if (fails) {
+            decode.result.completeError(StateError('Canceled worker'));
+          } else {
+            decode.finish('Late source after exit.');
+          }
+          // Dispose before the completed future resumes the inference callback.
+          h.controller.dispose();
+          disposed = true;
+          await _turn();
+          expect(h.native.overlays, isEmpty);
+          expect(h.controller.subtitles.segments, isEmpty);
+          expect(h.controller.error, isEmpty);
+        } finally {
+          if (!disposed) {
+            await h.close();
+          } else {
+            await h.native.audio.close();
+            await h.directory.delete(recursive: true);
+          }
+        }
+      },
+    );
+  }
+
   test(
     'emergency stop invalidates a held decode before native capture stop returns',
     () async {

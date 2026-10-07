@@ -6,6 +6,7 @@ import 'package:lumacaption/app/controller.dart';
 import 'package:lumacaption/app/shell.dart';
 import 'package:lumacaption/app/design.dart';
 import 'package:lumacaption/core/storage/native_bridge.dart';
+import 'package:lumacaption/core/subtitles/subtitles.dart';
 
 class _Native extends NativeBridge {
   _Native(this.path);
@@ -31,6 +32,75 @@ class _Native extends NativeBridge {
 }
 
 void main() {
+  for (final brightness in [Brightness.light, Brightness.dark]) {
+    testWidgets(
+      'source stability colors preserve partial status in $brightness',
+      (tester) async {
+        tester.view.physicalSize = const Size(1120, 800);
+        tester.view.devicePixelRatio = 1;
+        final dir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('luma-stable-ui-'),
+        ))!;
+        final native = _Native(dir.path);
+        final c = AppController(bridge: native)..testMode = true;
+        try {
+          await tester.runAsync(c.initialize);
+          const original = 'Hi 👋 世界 again';
+          for (final (stable, confirmed, expectedStable) in [
+            ('Hi 👋 世界', false, 'Hi 👋 世界'),
+            ('', false, ''),
+            ('Different source', false, ''),
+            ('Hi', true, original),
+          ]) {
+            c.subtitles.segments
+              ..clear()
+              ..add(
+                SubtitleSegment(
+                  generation: c.generation,
+                  segmentId: 'test-source',
+                  original: original,
+                  stableOriginal: stable,
+                  isFinal: confirmed,
+                ),
+              );
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: macContentTheme(brightness),
+                home: Shell(c: c),
+              ),
+            );
+            await tester.pumpAndSettle();
+            final selectable = tester.widget<SelectableText>(
+              find.byWidgetPredicate(
+                (w) =>
+                    w is SelectableText &&
+                    w.textSpan?.toPlainText() == original,
+              ),
+            );
+            final span = selectable.textSpan!;
+            final parts = span.children!.cast<TextSpan>();
+            final colors = Theme.of(
+              tester.element(find.byType(Shell)),
+            ).colorScheme;
+            expect(span.toPlainText(), original);
+            expect(parts[0].text, expectedStable);
+            expect(span.style!.color, colors.onSurface);
+            expect(parts[1].text, original.substring(expectedStable.length));
+            expect(parts[1].style!.color, colors.onSurfaceVariant);
+            expect(find.text(confirmed ? '已确认' : '识别中 · 可修订'), findsOneWidget);
+            expect(tester.takeException(), isNull);
+          }
+        } finally {
+          await tester.pumpWidget(const SizedBox());
+          c.dispose();
+          await native.events.close();
+          await tester.runAsync(() => dir.delete(recursive: true));
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        }
+      },
+    );
+  }
   for (final (size, brightness, scale) in [
     (const Size(1120, 800), Brightness.light, 1.0),
     (const Size(1120, 800), Brightness.dark, 1.25),

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumacaption/app/controller.dart';
 import 'package:lumacaption/app/mac_workbench.dart';
 import 'package:lumacaption/core/storage/native_bridge.dart';
+import 'package:lumacaption/core/subtitles/subtitles.dart';
 
 class QuietBridge extends NativeBridge {
   final calls = <String>[];
@@ -82,4 +83,33 @@ void main() {
     expect(snapshot['segments'], isEmpty);
     expect(native.calls, isEmpty);
   });
+  test(
+    'native snapshot carries stable source without confirming its preview',
+    () {
+      c.subtitles.reset(7);
+      c.subtitles.put(
+        const SubtitleSegment(
+          generation: 7,
+          segmentId: 'preview',
+          original: 'Hi 👋 世界 again',
+          stableOriginal: 'Hi 👋 世界',
+        ),
+      );
+      c.subtitles.put(
+        const SubtitleSegment(
+          generation: 7,
+          segmentId: 'final',
+          original: 'A confirmed sentence.',
+          isFinal: true,
+        ),
+      );
+      final segments = coordinator.snapshot()['segments'] as List;
+      expect(segments[0]['original'], 'Hi 👋 世界 again');
+      expect(segments[0]['stableOriginal'], 'Hi 👋 世界');
+      expect(segments[0]['final'], isFalse);
+      expect(segments[1]['stableOriginal'], '');
+      expect(segments[1]['final'], isTrue);
+      expect(native.calls, isEmpty);
+    },
+  );
 }
