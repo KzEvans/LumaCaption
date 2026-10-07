@@ -9,7 +9,7 @@ if [[ ! -x "$FLUTTER" ]]; then FLUTTER=$(command -v flutter); fi
 "$FLUTTER" assemble --output=build/flutter-macos -dTargetPlatform=darwin -dBuildMode=release -dDarwinArchs=arm64 release_macos_bundle_flutter_assets
 WHISPER_ARGS=()
 if [[ -f "$ROOT/.tools/whisper.cpp/CMakeLists.txt" ]]; then WHISPER_ARGS=(-DWHISPER_SOURCE="$ROOT/.tools/whisper.cpp"); fi
-cmake -S native/whisper -B build/whisper -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 -DGGML_METAL=OFF ${WHISPER_ARGS[@]+"${WHISPER_ARGS[@]}"}
+cmake -S native/whisper -B build/whisper -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON ${WHISPER_ARGS[@]+"${WHISPER_ARGS[@]}"}
 cmake --build build/whisper --config Release -j 6
 SDK_ROOT=$(cd "$(dirname "$FLUTTER")/.." && pwd)
 FRAMEWORK_PARENT="$SDK_ROOT/bin/cache/artifacts/engine/darwin-x64-release/FlutterMacOS.xcframework/macos-arm64_x86_64"

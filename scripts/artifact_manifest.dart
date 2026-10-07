@@ -63,7 +63,11 @@ Future<void> main(List<String> args) async {
         'dart': Platform.version.split(' ').first,
         'whisper.cpp': '1.8.1',
       },
-      'inferenceBackend': 'CPU',
+      'inferenceBackend': platform == 'macos'
+          ? 'Metal with CPU fallback'
+          : 'CPU',
+      if (platform == 'macos') 'metalKernels': 'embeddedSourceInNativeLibrary',
+      'whisperAbiVersion': 2,
       'modelWeightsBundled': false,
       'platformAcceptance':
           'See docs/testing.md; a build does not prove capture acceptance',

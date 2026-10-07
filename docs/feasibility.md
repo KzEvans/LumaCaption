@@ -45,6 +45,6 @@ Windows AI Speech 指南目前列 Windows 11 24H2 build 26100+、WinAppSDK 1.7.1
 
 本机 macOS 27.2 beta / arm64，只有 CLT；Swift 6.2 编译器（以工具实际输出为准），AppleClang 17，CMake 4.4.4、Ninja 1.13.2。`flutter build macos` 的标准 Xcode 工作流不能在此环境完成，实际 DMG 使用 `flutter assemble` 生成 AOT 框架并由 swiftc 编译原生宿主，再嵌入 Flutter/Whisper。CLT 中重复 Swift modulemap 通过构建目录 VFS overlay 解决，没有修改系统工具链。
 
-测试包使用 ad-hoc 签名，无 Developer ID、未公证；Hardened Runtime 仅在提供正式签名身份后开启，并用相同证书签全部嵌套代码。未改变系统信任、安全设置或证书。CPU 后端已实测；Metal 推理未编译验证，因此不显示 GPU 加速。Flutter 界面自身采用 Metal 渲染不等于 Whisper GPU 推理。
+测试包使用 ad-hoc 签名，无 Developer ID、未公证；Hardened Runtime 仅在提供正式签名身份后开启，并用相同证书签全部嵌套代码。未改变系统信任、安全设置或证书。macOS 0.1.0+6 的 Whisper 开启 Metal 并嵌入 GPU 内核源码，移出开发目录的真实推理通过；实际后端从原生上下文回传，失败时回退 CPU。Windows 保持 CPU。Flutter 的图形渲染与 Whisper 推理后端分别判断。
 
 [whisper.cpp 固定版本](https://github.com/ggml-org/whisper.cpp/tree/v1.8.1)、[模型上游](https://huggingface.co/ggerganov/whisper.cpp)。

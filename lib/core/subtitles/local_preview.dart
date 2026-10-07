@@ -25,6 +25,13 @@ class _LocalPreview {
   bool targetFinal = false;
 }
 
+class _WordToken {
+  const _WordToken(this.word, this.end, this.cjk);
+  final String word;
+  final int end;
+  final bool cjk;
+}
+
 /// Two successive ASR hypotheses must agree before uploading a preview.
 /// Preview translations stay revisable; only authoritative ASR + completed MT
 /// can populate the confirmed translation used by exports and history.
@@ -51,9 +58,7 @@ class LocalPreviewPipeline {
     }
     final text = _normalize(incoming.original);
     final pending = old?.request;
-    final invalidated =
-        pending != null &&
-        !text.toLowerCase().startsWith(pending.text.toLowerCase());
+    final invalidated = pending != null && !_wordPrefix(pending.text, text);
     final visible = SubtitleSegment(
       generation: incoming.generation,
       segmentId: incoming.segmentId,
@@ -75,7 +80,10 @@ class LocalPreviewPipeline {
     final elapsedAudio = snapshotEnd == null || state.lastPreviewEndUs == null
         ? null
         : snapshotEnd - state.lastPreviewEndUs!;
-    final changed = pending?.text != candidate || incoming.isFinal;
+    final changed =
+        incoming.isFinal ||
+        pending == null ||
+        !_sameWords(pending.text, candidate);
     final ready =
         incoming.isFinal ||
         (candidate.isNotEmpty &&
@@ -137,37 +145,96 @@ class LocalPreviewPipeline {
 
   static String _normalize(String value) =>
       value.trim().replaceAll(RegExp(r'\s+'), ' ');
-  static final _word = RegExp(r"[\p{L}\p{M}\p{N}'’]", unicode: true);
-  static final _cjk = RegExp(r'[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]');
+  static final _word = RegExp(r'[\p{L}\p{M}\p{N}]', unicode: true);
+  static final _cjk = RegExp(
+    r'[\u3400-\u9fff\u{20000}-\u{323af}\u3040-\u30ff\uac00-\ud7af]',
+    unicode: true,
+  );
   static bool _wordPart(int rune) {
     final char = String.fromCharCode(rune);
     return _word.hasMatch(char) && !_cjk.hasMatch(char);
   }
 
+  static List<_WordToken> _tokens(String value) {
+    final runes = value.runes.toList();
+    final offsets = <int>[0];
+    for (final rune in runes) {
+      offsets.add(offsets.last + String.fromCharCode(rune).length);
+    }
+    final tokens = <_WordToken>[];
+    var i = 0;
+    while (i < runes.length) {
+      final char = String.fromCharCode(runes[i]);
+      if (_cjk.hasMatch(char)) {
+        tokens.add(_WordToken(char.toLowerCase(), offsets[++i], true));
+      } else if (_wordPart(runes[i])) {
+        final start = i++;
+        while (i < runes.length) {
+          if (_wordPart(runes[i])) {
+            i++;
+          } else if ((runes[i] == 0x27 || runes[i] == 0x2019) &&
+              i + 1 < runes.length &&
+              _wordPart(runes[i + 1])) {
+            // Apostrophes inside a word are meaningful: don't != dont.
+            // Straight and typographic apostrophes represent the same word.
+            i += 2;
+          } else {
+            break;
+          }
+        }
+        tokens.add(
+          _WordToken(
+            value
+                .substring(offsets[start], offsets[i])
+                .replaceAll('’', "'")
+                .toLowerCase(),
+            offsets[i],
+            false,
+          ),
+        );
+      } else {
+        i++;
+      }
+    }
+    return tokens;
+  }
+
+  static bool _wordPrefix(String prefix, String text) {
+    final a = _tokens(prefix), b = _tokens(text);
+    if (a.length > b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].word != b[i].word) return false;
+    }
+    return true;
+  }
+
+  static bool _sameWords(String a, String b) {
+    final at = _tokens(a), bt = _tokens(b);
+    if (at.length != bt.length) return false;
+    for (var i = 0; i < at.length; i++) {
+      if (at[i].word != bt[i].word) return false;
+    }
+    return true;
+  }
+
   static String stablePrefix(String previous, String current) {
     final a = _normalize(previous), b = _normalize(current);
-    final ar = a.runes.toList(), br = b.runes.toList();
+    final at = _tokens(a), bt = _tokens(b);
     var n = 0;
-    while (n < ar.length &&
-        n < br.length &&
-        String.fromCharCode(ar[n]).toLowerCase() ==
-            String.fromCharCode(br[n]).toLowerCase()) {
+    while (n < at.length && n < bt.length && at[n].word == bt[n].word) {
       n++;
     }
-    var prefix = String.fromCharCodes(br.take(n)).trimRight();
-    // Do not upload a partial Latin word (ask vs asked). CJK text has no
-    // whitespace boundaries; the agreed characters remain provisional too.
-    if (n > 0 &&
-        _wordPart(br[n - 1]) &&
-        ((n < ar.length && _wordPart(ar[n])) ||
-            (n < br.length && _wordPart(br[n])))) {
-      final boundary = prefix.lastIndexOf(' ');
-      prefix = boundary < 0 ? '' : prefix.substring(0, boundary);
+    // Even matching words at the current boundary may change when more audio
+    // arrives. Hold one token back; final ASR always bypasses this preview gate.
+    if (n < 2) return '';
+    final kept = bt.take(n - 1).toList();
+    final cjkCount = kept.where((token) => token.cjk).length;
+    final contentLength = kept.map((token) => token.word).join(' ').length;
+    if (cjkCount > 0 ? cjkCount < 4 : kept.length < 2 || contentLength < 8) {
+      return '';
     }
-    final cjk = _cjk.hasMatch(prefix);
-    if (cjk) return prefix.runes.length >= 4 ? prefix.trim() : '';
-    return prefix.length >= 8 && prefix.split(' ').length >= 2
-        ? prefix.trim()
-        : '';
+    // Return the current spelling and punctuation, with only the comparison
+    // normalized. Punctuation-only changes do not create another MT request.
+    return b.substring(0, kept.last.end).trim();
   }
 }

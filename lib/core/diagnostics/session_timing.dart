@@ -191,6 +191,35 @@ class SessionTiming {
     });
   }
 
+  void localInference({
+    required int generation,
+    required String segmentId,
+    required int sourceRevision,
+    required String stage,
+    required bool isFinal,
+    required int audioStartUs,
+    required int audioEndUs,
+    required int previewIntervalUs,
+    int? inferenceUs,
+  }) {
+    if (generation != this.generation || _stoppedUs != null) return;
+    _requireAudio();
+    final segment = _segments.putIfAbsent(
+      segmentId,
+      () => _SegmentTiming(_segments.length + 1),
+    );
+    _record('localInference', _now(), {
+      'segment': segment.ordinal,
+      'sourceRevision': sourceRevision,
+      'stage': stage,
+      'isFinal': isFinal,
+      'audioStartMs': _ms(audioStartUs),
+      'audioSnapshotEndMs': _ms(audioEndUs),
+      'previewIntervalMs': _ms(previewIntervalUs),
+      if (inferenceUs != null) 'inferenceMs': _ms(inferenceUs),
+    });
+  }
+
   void stopped() {
     if (_stoppedUs != null) return;
     _requirePreparation();

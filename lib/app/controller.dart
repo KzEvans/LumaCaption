@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:collection';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import '../core/audio/audio.dart';
 import '../core/asr/whisper.dart';
+import '../core/asr/inference_queue.dart';
+import '../core/asr/local_context.dart';
 import '../core/models/model_manager.dart';
 import '../core/storage/native_bridge.dart';
 import '../core/storage/settings.dart';
@@ -16,17 +17,20 @@ import '../core/translation/translation.dart';
 import '../core/diagnostics/session_timing.dart';
 
 class AppController extends ChangeNotifier {
-  AppController({NativeBridge? bridge}) : native = bridge ?? NativeBridge();
+  AppController({NativeBridge? bridge, WhisperEngine? engine})
+    : native = bridge ?? NativeBridge(),
+      whisper = engine ?? WhisperEngine();
   final NativeBridge native;
   AppSettings settings = AppSettings();
   SettingsStore? settingsStore;
   ModelManager? models;
   final SubtitleStore subtitles = SubtitleStore();
-  final WhisperEngine whisper = WhisperEngine();
+  final WhisperEngine whisper;
   final PcmConverter converter = PcmConverter();
   AudioSegmenter segmenter = AudioSegmenter();
   final LocalPreviewPipeline _localPreviews = LocalPreviewPipeline();
-  final Queue<AudioChunk> _chunks = Queue();
+  final InferenceQueue _chunks = InferenceQueue();
+  final LocalRecognitionContext _recognitionContext = LocalRecognitionContext();
   StreamSubscription<dynamic>? _nativeSub;
   RealtimeTranslator? _realtime;
   TextTranslationQueue? _textQueue;
@@ -384,6 +388,8 @@ class AppController extends ChangeNotifier {
     }
     notifyListeners();
     try {
+      // An aborted prior worker must finish before a new generation can use it.
+      await _inferenceTask;
       if (settings.mode != 'realtime' && settings.modelPath.isEmpty) {
         throw StateError('请先在模型管理中下载或导入 Whisper 模型');
       }
@@ -394,9 +400,13 @@ class AppController extends ChangeNotifier {
       generation++;
       subtitles.reset(generation);
       _localPreviews.reset(generation);
+      _recognitionContext.reset(generation);
       converter.reset();
       segmenter = settings.mode == 'text'
-          ? AudioSegmenter(previewInterval: const Duration(seconds: 1))
+          ? AudioSegmenter(
+              previewInterval: const Duration(seconds: 1),
+              enableAdaptive: true,
+            )
           : AudioSegmenter();
       _chunks.clear();
       _baseUs = 0;
@@ -519,22 +529,14 @@ class AppController extends ChangeNotifier {
   }
 
   void _enqueue(AudioChunk chunk) {
-    _chunks.removeWhere(
-      (old) => old.segmentId == chunk.segmentId && !old.isFinal,
-    );
-    if (_chunks.length >= 2) {
-      final obsolete = _chunks.where((old) => !old.isFinal).firstOrNull;
-      if (obsolete != null) {
-        _chunks.remove(obsolete);
-      } else if (!chunk.isFinal) {
-        return;
-      } else {
-        _chunks.removeFirst();
-        droppedFrames++;
-        error = '本地识别跟不上声音，已跳过过时音频。请选择更小的模型。';
-      }
+    final before = _chunks.droppedFinalCount;
+    final accepted = _chunks.add(chunk);
+    final lost = _chunks.droppedFinalCount - before;
+    if (lost > 0) {
+      droppedFrames += lost;
+      error = '本地识别跟不上声音，已跳过过时音频。请选择更小的模型。';
     }
-    _chunks.add(chunk);
+    if (!accepted) return;
     _inferenceTask ??= _infer(
       generation,
     ).whenComplete(() => _inferenceTask = null);
@@ -542,14 +544,45 @@ class AppController extends ChangeNotifier {
 
   Future<void> _infer(int g) async {
     while (_chunks.isNotEmpty && g == generation) {
-      final chunk = _chunks.removeFirst();
+      final chunk = _chunks.take()!;
       final watch = Stopwatch()..start();
       try {
+        sessionTiming?.localInference(
+          generation: g,
+          segmentId: 'local:${chunk.segmentId}',
+          sourceRevision: chunk.revision,
+          stage: 'started',
+          isFinal: chunk.isFinal,
+          audioStartUs: chunk.startUs,
+          audioEndUs: chunk.endUs,
+          previewIntervalUs: segmenter.previewInterval.inMicroseconds,
+        );
         final results = await whisper.transcribe(
           chunk.samples,
           language: settings.sourceLanguage,
+          prompt: _recognitionContext.promptFor(
+            generation: g,
+            audioStartUs: chunk.startUs,
+          ),
+          isFinal: chunk.isFinal,
         );
         if (g != generation) return;
+        final inferenceUs = watch.elapsedMicroseconds;
+        segmenter.observeInference(
+          Duration(microseconds: inferenceUs),
+          isFinal: chunk.isFinal,
+        );
+        sessionTiming?.localInference(
+          generation: g,
+          segmentId: 'local:${chunk.segmentId}',
+          sourceRevision: chunk.revision,
+          stage: 'completed',
+          isFinal: chunk.isFinal,
+          audioStartUs: chunk.startUs,
+          audioEndUs: chunk.endUs,
+          previewIntervalUs: segmenter.previewInterval.inMicroseconds,
+          inferenceUs: inferenceUs,
+        );
         rtf = watch.elapsedMicroseconds / (chunk.endUs - chunk.startUs);
         {
           var text = results.map((r) => r.text).join().trim();
@@ -599,6 +632,14 @@ class AppController extends ChangeNotifier {
             if (chunk.isFinal && text.isNotEmpty) {
               _previousText = results.map((r) => r.text).join().trim();
               _previousFinalEndUs = end;
+            }
+            if (chunk.isFinal) {
+              _recognitionContext.confirmed(
+                generation: g,
+                startUs: chunk.startUs,
+                endUs: chunk.endUs,
+                text: results.map((r) => r.text).join().trim(),
+              );
             }
             if (preview.cancelPending) _textQueue?.cancelSegment(id);
             final request = preview.request;
@@ -651,18 +692,25 @@ class AppController extends ChangeNotifier {
     status = emergency ? '立即停止上传' : '正在收尾最后一句';
     running = false;
     level = 0;
+    Future<void>? realtimeCancellation;
+    if (emergency) {
+      // Invalidate callbacks and uploads before waiting for native capture stop.
+      generation++;
+      subtitles.reset(generation);
+      _localPreviews.reset(generation);
+      _recognitionContext.reset(generation);
+      _chunks.clear();
+      segmenter.reset();
+      whisper.cancel();
+      _textQueue?.dispose();
+      realtimeCancellation = _realtime?.cancel();
+    }
     notifyListeners();
     try {
       await native.call<void>('stop');
       if (emergency) {
-        generation++;
-        subtitles.reset(generation);
-        _localPreviews.reset(generation);
-        _chunks.clear();
-        segmenter.reset();
-        whisper.cancel();
-        await _realtime?.cancel();
-        _textQueue?.dispose();
+        await realtimeCancellation;
+        await _inferenceTask;
       } else {
         final chunk = segmenter.flush();
         if (chunk != null) _enqueue(chunk);

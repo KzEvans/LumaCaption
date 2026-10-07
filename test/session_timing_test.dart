@@ -5,6 +5,49 @@ import 'package:lumacaption/core/diagnostics/session_timing.dart';
 
 void main() {
   test(
+    'local inference trace separates duration and adaptive cadence without text',
+    () {
+      var us = 0;
+      final timing = SessionTiming(generation: 1, elapsedMicroseconds: () => us)
+        ..preparationStarted()
+        ..audioStarted();
+      void mark(int generation, String stage, {int? duration}) =>
+          timing.localInference(
+            generation: generation,
+            segmentId: 'private-source-id',
+            sourceRevision: 2,
+            stage: stage,
+            isFinal: false,
+            audioStartUs: 0,
+            audioEndUs: 3000000,
+            previewIntervalUs: 1250000,
+            inferenceUs: duration,
+          );
+      us = 3000000;
+      mark(1, 'started');
+      us += 800000;
+      mark(1, 'completed', duration: 800000);
+      mark(2, 'completed', duration: 900000);
+      final events = (timing.report()['events'] as List)
+          .where((e) => e['event'] == 'localInference')
+          .toList();
+      expect(events.length, 2);
+      expect(events.last['inferenceMs'], 800);
+      expect(events.last['audioSnapshotEndMs'], 3000);
+      expect(events.last['previewIntervalMs'], 1250);
+      expect(events.last['segment'], events.first['segment']);
+      expect(jsonEncode(timing.report()), isNot(contains('private-source-id')));
+      timing.stopped();
+      mark(1, 'completed', duration: 1000000);
+      expect(
+        (timing.report()['events'] as List)
+            .where((e) => e['event'] == 'localInference')
+            .length,
+        2,
+      );
+    },
+  );
+  test(
     'request milestones join source ordinal without recording request text',
     () {
       var us = 0;
