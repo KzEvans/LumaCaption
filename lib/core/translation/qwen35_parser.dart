@@ -1,16 +1,23 @@
 import 'translation_models.dart';
+import 'realtime_parser.dart';
 
 /// The 3.5 text/stash protocol is separate from the 3.8 delta protocol.
 /// Uses the current-text interpretation in the official Python example. A real
 /// multi-event trace is still required to validate it; done is authoritative.
-class Qwen35Parser {
-  Qwen35Parser({required this.generation, this.cloudTranscription = false});
+class Qwen35Parser implements RealtimeParser {
+  Qwen35Parser({
+    required this.generation,
+    this.cloudTranscription = false,
+    this.modelId = 'qwen3.5-livetranslate-flash-realtime',
+  });
   final int generation;
   final bool cloudTranscription;
+  final String modelId;
   final _segments = <String, TranslationEvent>{};
   final _seen = <String>{};
   final _ranges = <String, (Duration?, Duration?)>{};
 
+  @override
   List<TranslationEvent> accept(Map<String, dynamic> event) {
     final eventId = event['event_id'];
     if (eventId is String && !_seen.add(eventId)) return const [];
@@ -64,6 +71,7 @@ class Qwen35Parser {
         isFinal: isFinal,
         audioStart: range?.$1,
         audioEnd: range?.$2,
+        engine: modelId,
       );
       _save(result);
       return [result];
@@ -114,6 +122,7 @@ class Qwen35Parser {
     return const [];
   }
 
+  @override
   List<TranslationEvent> interrupt() =>
       _markInterrupted((segment) => !segment.isFinal);
 
@@ -134,6 +143,7 @@ class Qwen35Parser {
         interrupted: true,
         audioStart: old.audioStart,
         audioEnd: old.audioEnd,
+        engine: old.engine,
       );
       _segments[old.segmentId] = next;
       updates.add(next);

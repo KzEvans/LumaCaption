@@ -17,16 +17,22 @@ class SubtitleSegment {
   final int? startUs, endUs;
   final bool isFinal;
   final String? error;
-  SubtitleSegment translated(String text) => SubtitleSegment(
+  SubtitleSegment translated(
+    String text, {
+    bool translationFinal = true,
+    bool interrupted = false,
+  }) => SubtitleSegment(
     generation: generation,
     segmentId: segmentId,
     revision: revision + 1,
     startUs: startUs,
     endUs: endUs,
     original: original,
-    translation: text,
+    translation: translationFinal ? text : '',
+    stash: translationFinal ? '' : text,
     isFinal: isFinal,
     engine: engine,
+    error: interrupted ? '译文未完成' : null,
   );
 }
 

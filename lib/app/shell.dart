@@ -876,10 +876,10 @@ class _ShellState extends State<Shell> {
         children: [
           Text('默认千问实时模型', style: TextStyle(fontWeight: FontWeight.w600)),
           SizedBox(height: 8),
-          SelectableText('qwen3.5-livetranslate-flash-realtime'),
+          SelectableText('qwen3.8-livetranslate-flash-realtime'),
           SizedBox(height: 8),
           Text(
-            '纯文本字幕输出，单声道 16 kHz PCM 音频输入。源语言默认自动检测。云端原文识别需单独启用。',
+            '纯文本字幕输出，单声道 16 kHz PCM 音频输入。3.8 自动检测源语言并始终返回云端原文；3.5 可选云端原文。',
             style: TextStyle(fontSize: 12),
           ),
         ],

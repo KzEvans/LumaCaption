@@ -8,6 +8,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 
 import 'qwen35_parser.dart';
+import 'qwen38_parser.dart';
+import 'realtime_parser.dart';
 import 'translation_models.dart';
 export 'translation_models.dart';
 
@@ -18,7 +20,7 @@ class RealtimeConfig {
         'wss://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/api-ws/v1/realtime',
     this.workspaceId = '',
     this.region = 'cn-beijing',
-    this.modelId = 'qwen3.5-livetranslate-flash-realtime',
+    this.modelId = 'qwen3.8-livetranslate-flash-realtime',
     this.sourceLanguage,
     this.targetLanguage = 'zh',
     this.cloudTranscription = false,
@@ -55,12 +57,6 @@ class RealtimeConfig {
     if (modelId.trim().isEmpty || targetLanguage.trim().isEmpty) {
       throw const TranslationFailure('configuration', '请填写模型 ID 和目标语言。');
     }
-    if (modelId.startsWith('qwen3.8-')) {
-      throw const TranslationFailure(
-        'protocol_version',
-        '此适配器仅支持 Qwen 3.5 的 text/stash 协议；3.8 需要独立适配器。',
-      );
-    }
     final endpointUri = validateTranslationEndpoint(
       endpoint,
       webSocket: true,
@@ -72,29 +68,49 @@ class RealtimeConfig {
     );
   }
 
-  Map<String, Object?> get session => {
-    'modalities': ['text'],
-    'input_audio_format': 'pcm',
-    'sample_rate': 16000,
-    'enable_voice_clone': false,
-    'turn_detection': {
-      'type': 'server_vad',
-      'threshold': 0.2,
-      'silence_duration_ms': 800,
-    },
-    if (cloudTranscription ||
-        (sourceLanguage != null && sourceLanguage != 'auto'))
-      'input_audio_transcription': {
-        if (cloudTranscription) 'model': 'qwen3-asr-flash-realtime',
-        if (sourceLanguage != null && sourceLanguage != 'auto')
-          'language': sourceLanguage,
-      },
-    'translation': {
-      'language': targetLanguage,
-      if (glossary.isNotEmpty)
-        'corpus': {'phrases': Map.fromEntries(glossary.entries.take(1000))},
-    },
-  };
+  bool get usesDeltaProtocol => modelId.startsWith('qwen3.8-');
+
+  Map<String, Object?> get session => usesDeltaProtocol
+      ? {
+          'output_modalities': ['text'],
+          'audio': {
+            'input': {
+              'turn_detection': {'type': 'speaker_detection', 'threshold': 0.5},
+            },
+          },
+          'translation': {
+            'language': targetLanguage,
+            if (glossary.isNotEmpty)
+              'corpus': {
+                'phrases': Map.fromEntries(glossary.entries.take(1000)),
+              },
+          },
+        }
+      : {
+          'modalities': ['text'],
+          'input_audio_format': 'pcm',
+          'sample_rate': 16000,
+          'enable_voice_clone': false,
+          'turn_detection': {
+            'type': 'server_vad',
+            'threshold': 0.2,
+            'silence_duration_ms': 800,
+          },
+          if (cloudTranscription ||
+              (sourceLanguage != null && sourceLanguage != 'auto'))
+            'input_audio_transcription': {
+              if (cloudTranscription) 'model': 'qwen3-asr-flash-realtime',
+              if (sourceLanguage != null && sourceLanguage != 'auto')
+                'language': sourceLanguage,
+            },
+          'translation': {
+            'language': targetLanguage,
+            if (glossary.isNotEmpty)
+              'corpus': {
+                'phrases': Map.fromEntries(glossary.entries.take(1000)),
+              },
+          },
+        };
 
   @override
   String toString() =>
@@ -111,13 +127,16 @@ class _AudioPacket {
 /// generation after interruption. Failed sessions never replay retained audio.
 class RealtimeTranslator {
   RealtimeTranslator(this.config, {required this.generation})
-    : _parser = Qwen35Parser(
-        generation: generation,
-        cloudTranscription: config.cloudTranscription,
-      );
+    : _parser = config.usesDeltaProtocol
+          ? Qwen38Parser(generation: generation, modelId: config.modelId)
+          : Qwen35Parser(
+              generation: generation,
+              cloudTranscription: config.cloudTranscription,
+              modelId: config.modelId,
+            );
   final RealtimeConfig config;
   final int generation;
-  final Qwen35Parser _parser;
+  final RealtimeParser _parser;
   final _events = StreamController<TranslationEvent>.broadcast();
   final _states = StreamController<RealtimeState>.broadcast();
   final _errors = StreamController<TranslationFailure>.broadcast();
@@ -346,6 +365,7 @@ class RealtimeTranslator {
 
   void _receive(dynamic raw) {
     if (_state == RealtimeState.failed ||
+        _state == RealtimeState.finished ||
         _state == RealtimeState.canceled ||
         _disposed) {
       return;
@@ -363,9 +383,12 @@ class RealtimeTranslator {
         case 'session.updated':
           if (_state == RealtimeState.configuring && !_configured.isCompleted) {
             final session = decoded['session'];
+            final modalityKey = config.usesDeltaProtocol
+                ? 'output_modalities'
+                : 'modalities';
             if (session is Map &&
-                session['modalities'] is List &&
-                (session['modalities'] as List).any((m) => m != 'text')) {
+                session[modalityKey] is List &&
+                (session[modalityKey] as List).any((m) => m != 'text')) {
               throw const TranslationFailure(
                 'configuration',
                 '服务未接受仅文本输出，已停止会话。',
@@ -375,6 +398,9 @@ class RealtimeTranslator {
           }
         case 'session.finished':
           if (_state == RealtimeState.finishing) {
+            for (final event in _parser.interrupt()) {
+              _events.add(event);
+            }
             if (!_finished.isCompleted) _finished.complete();
             _setState(RealtimeState.finished);
           }
@@ -387,10 +413,19 @@ class RealtimeTranslator {
           );
           return;
         case 'response.text.delta':
-          throw const TranslationFailure(
-            'protocol_version',
-            '服务返回 delta 协议，与当前 Qwen 3.5 适配器不兼容。',
-          );
+          if (!config.usesDeltaProtocol) {
+            throw const TranslationFailure(
+              'protocol_version',
+              '服务返回 delta 协议，与当前 Qwen 3.5 适配器不兼容。',
+            );
+          }
+        case 'response.text.text':
+          if (config.usesDeltaProtocol) {
+            throw const TranslationFailure(
+              'protocol_version',
+              '服务返回 text/stash 协议，与当前 Qwen 3.8 模型不兼容。',
+            );
+          }
       }
       for (final event in _parser.accept(decoded)) {
         _events.add(event);

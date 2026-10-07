@@ -12,6 +12,7 @@ import '../core/storage/settings.dart';
 import '../core/storage/history_store.dart';
 import '../core/subtitles/subtitles.dart';
 import '../core/translation/translation.dart';
+import '../core/diagnostics/session_timing.dart';
 
 class AppController extends ChangeNotifier {
   AppController({NativeBridge? bridge}) : native = bridge ?? NativeBridge();
@@ -37,6 +38,8 @@ class AppController extends ChangeNotifier {
       clickThrough = false;
   bool translating = false, loadingModel = false;
   bool testMode = false;
+  bool measureSession = false;
+  SessionTiming? sessionTiming;
   bool _historyReadable = true;
   bool fileInput = false;
   int receivedFrames = 0, receivedSamples = 0;
@@ -192,9 +195,7 @@ class AppController extends ChangeNotifier {
     targetLanguage: settings.targetLanguage,
   ).uri;
   Future<void> saveKey(String key, {bool text = false}) async {
-    final uri = text
-        ? validateTranslationEndpoint(settings.textBaseUrl, webSocket: false)
-        : realtimeUri;
+    final uri = text ? textServiceUri : realtimeUri;
     await native.saveSecret(AppSettings.credentialAccount(uri), key);
     await save();
     status = '凭据已存入系统安全存储';
@@ -202,9 +203,15 @@ class AppController extends ChangeNotifier {
   }
 
   Future<String> _key(bool text) async {
-    final uri = text ? Uri.parse(settings.textBaseUrl) : realtimeUri;
+    final uri = text ? textServiceUri : realtimeUri;
     return await native.secret(AppSettings.credentialAccount(uri)) ?? '';
   }
+
+  Uri get textServiceUri => validateTranslationEndpoint(
+    settings.textBaseUrl,
+    webSocket: false,
+    workspaceId: settings.workspace,
+  );
 
   Future<void> loadModel(String path) async {
     if (running || busy) throw StateError('请先停止当前会话');
@@ -266,7 +273,7 @@ class AppController extends ChangeNotifier {
       _realtime = realtime;
       realtime.events.listen((event) {
         if (event.generation != generation) return;
-        subtitles.put(
+        final accepted = subtitles.put(
           SubtitleSegment(
             generation: g,
             segmentId: 'cloud:${event.segmentId}',
@@ -281,6 +288,19 @@ class AppController extends ChangeNotifier {
             error: event.interrupted ? '未完成' : null,
           ),
         );
+        if (accepted && !event.interrupted) {
+          final text = event.isSource ? event.original ?? '' : event.text;
+          if (text.trim().isNotEmpty) {
+            sessionTiming?.received(
+              generation: g,
+              segmentId: 'cloud:${event.segmentId}',
+              channel: event.isSource ? 'source' : 'translation',
+              revision: event.revision,
+              isFinal: event.isFinal,
+              audioEndUs: event.audioEnd?.inMicroseconds,
+            );
+          }
+        }
         _updateOverlay();
         notifyListeners();
       });
@@ -299,6 +319,7 @@ class AppController extends ChangeNotifier {
         modelId: settings.textModel,
         workspaceId: settings.workspace,
         proxy: settings.proxy.isEmpty ? null : settings.proxy,
+        stream: settings.textProvider == 'qwen',
       );
       _textAdapter = settings.textProvider == 'qwen'
           ? QwenMtTranslator(config)
@@ -312,7 +333,25 @@ class AppController extends ChangeNotifier {
             (s) => s.generation == g && s.segmentId == event.segmentId,
           );
           if (i >= 0) {
-            subtitles.put(subtitles.segments[i].translated(event.text));
+            final accepted = subtitles.put(
+              subtitles.segments[i].translated(
+                event.text,
+                translationFinal: event.isFinal && !event.interrupted,
+                interrupted: event.interrupted,
+              ),
+            );
+            if (accepted &&
+                !event.interrupted &&
+                event.text.trim().isNotEmpty) {
+              sessionTiming?.received(
+                generation: g,
+                segmentId: event.segmentId,
+                channel: 'translation',
+                revision: event.revision,
+                isFinal: event.isFinal,
+                audioEndUs: event.audioEnd?.inMicroseconds,
+              );
+            }
             _updateOverlay();
             notifyListeners();
           }
@@ -330,6 +369,10 @@ class AppController extends ChangeNotifier {
     busy = true;
     error = '';
     status = '准备音频与模型';
+    if (measureSession) {
+      sessionTiming = SessionTiming(generation: generation + 1)
+        ..preparationStarted();
+    }
     notifyListeners();
     try {
       if (settings.mode != 'realtime' && settings.modelPath.isEmpty) {
@@ -354,6 +397,7 @@ class AppController extends ChangeNotifier {
       peakLevel = 0;
       this.fileInput = fileInput;
       await _setupTranslation(generation);
+      sessionTiming?.translationReady();
       if (!fileInput) {
         await native.call<void>('start', {
           'source': settings.source,
@@ -452,7 +496,10 @@ class AppController extends ChangeNotifier {
         );
       }
     }
-    if (whisper.ready) {
+    if (whisper.ready &&
+        (settings.mode != 'realtime' ||
+            !translating ||
+            !settings.cloudTranscription)) {
       for (final chunk in segmenter.add(samples, frame.timestampUs - _baseUs)) {
         _enqueue(chunk);
       }
@@ -504,7 +551,7 @@ class AppController extends ChangeNotifier {
             chunk.endUs,
           );
           if (text.isNotEmpty) {
-            subtitles.put(
+            final accepted = subtitles.put(
               SubtitleSegment(
                 generation: g,
                 segmentId: id,
@@ -516,6 +563,16 @@ class AppController extends ChangeNotifier {
                 engine: whisper.backend,
               ),
             );
+            if (accepted) {
+              sessionTiming?.received(
+                generation: g,
+                segmentId: id,
+                channel: 'source',
+                revision: chunk.revision,
+                isFinal: chunk.isFinal,
+                audioEndUs: end,
+              );
+            }
             if (chunk.isFinal) {
               _previousText = results.map((r) => r.text).join().trim();
               _previousFinalEndUs = end;
@@ -595,12 +652,17 @@ class AppController extends ChangeNotifier {
       status = '已停止';
       record('会话已停止');
       await _persistHistory();
+      sessionTiming?.stopped();
       notifyListeners();
     }
   }
 
-  Future<void> processFile({String? inputPath}) async {
-    if (settings.mode != 'offline') {
+  Future<void> processFile({
+    String? inputPath,
+    bool paced = false,
+    bool allowOnline = false,
+  }) async {
+    if (settings.mode != 'offline' && !(testMode && allowOnline)) {
       throw StateError('测试文件入口使用离线模式，请先选择「离线原文字幕」');
     }
     final path = inputPath ?? await native.call<String>('files.pickAudio');
@@ -612,6 +674,8 @@ class AppController extends ChangeNotifier {
     final wav = WavAudio.decode(await f.readAsBytes());
     await start(fileInput: true);
     final g = generation;
+    final pacing = Stopwatch()..start();
+    sessionTiming?.audioStarted();
     try {
       final size = (wav.sampleRate ~/ 10) * wav.channels;
       for (
@@ -619,11 +683,21 @@ class AppController extends ChangeNotifier {
         i < wav.samples.length && g == generation && running;
         i += size
       ) {
-        while (_chunks.isNotEmpty || _inferenceTask != null) {
-          await Future<void>.delayed(const Duration(milliseconds: 50));
-          if (g != generation || !running) return;
-        }
         final end = (i + size).clamp(0, wav.samples.length);
+        final scheduledEndUs = end * 1000000 ~/ (wav.sampleRate * wav.channels);
+        if (paced) {
+          final remaining = scheduledEndUs - pacing.elapsedMicroseconds;
+          if (remaining > 0) {
+            await Future<void>.delayed(Duration(microseconds: remaining));
+          }
+        } else {
+          while (_chunks.isNotEmpty || _inferenceTask != null) {
+            await Future<void>.delayed(const Duration(milliseconds: 50));
+            if (g != generation || !running) return;
+          }
+        }
+        if (g != generation || !running) return;
+        sessionTiming?.audioFrame(scheduledEndUs: scheduledEndUs);
         _onAudio(
           AudioFrame(
             samples: Float32List.sublistView(wav.samples, i, end),
@@ -637,6 +711,7 @@ class AppController extends ChangeNotifier {
         );
       }
     } finally {
+      sessionTiming?.audioFinished();
       if (running) await stop();
     }
   }

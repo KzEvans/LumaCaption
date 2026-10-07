@@ -11,7 +11,7 @@ class AppSettings {
   String endpoint = '',
       workspace = '',
       region = 'cn-beijing',
-      modelId = 'qwen3.5-livetranslate-flash-realtime',
+      modelId = 'qwen3.8-livetranslate-flash-realtime',
       sourceLanguage = 'auto',
       targetLanguage = 'zh';
   String textProvider = 'qwen',

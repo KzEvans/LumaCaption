@@ -72,7 +72,7 @@ class TranslationEvent {
     this.audioEnd,
     this.isSource = false,
     this.interrupted = false,
-    this.engine = 'qwen3.5-livetranslate-flash-realtime',
+    this.engine = 'qwen3.8-livetranslate-flash-realtime',
   });
   final int generation;
   final String segmentId;

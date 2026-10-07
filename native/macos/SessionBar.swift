@@ -7,7 +7,7 @@ final class SessionBar: NSView {
     private let statusLabel = nativeLabel("正在初始化", size: 12, weight: .medium)
     private let privacy = nativeLabel("", size: 11, secondary: true)
     private let metrics = nativeLabel("", size: 11, secondary: true)
-    private let meter = NSLevelIndicator()
+    private let meter = InputLevelMeter(frame: .zero)
     private var start: ActionButton!, pause: ActionButton!, overlay: ActionButton!, emergency: ActionButton!
 
     override init(frame: NSRect) {
@@ -18,10 +18,12 @@ final class SessionBar: NSView {
         overlay = ActionButton("打开悬浮字幕", symbol: "pip") { [weak self] in self?.send("toggleOverlay") }
         emergency = ActionButton("立即停止", symbol: "stop.circle") { [weak self] in self?.send("emergency") }
         emergency.toolTip = "立即停止采集并丢弃待处理音频"
-        meter.levelIndicatorStyle = .continuousCapacity; meter.minValue = 0; meter.maxValue = 1
-        meter.setAccessibilityLabel("输入音量"); meter.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        meter.widthAnchor.constraint(equalToConstant: 112).isActive = true
+        meter.heightAnchor.constraint(equalToConstant: 20).isActive = true
+        meter.setContentCompressionResistancePriority(.required, for: .horizontal)
         statusLabel.maximumNumberOfLines = 1; statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 190).isActive = true
+        for button in [overlay, pause, start] { button?.setContentCompressionResistancePriority(.required, for: .horizontal) }
         let actions = row([nativeSymbol("waveform", size: 16), statusLabel, meter, spacer(), overlay, pause, start], spacing: 10)
         let detail = row([nativeSymbol("lock.shield", size: 13), privacy, spacer(), metrics, emergency], spacing: 8)
         privacy.maximumNumberOfLines = 2; metrics.maximumNumberOfLines = 1
@@ -35,6 +37,7 @@ final class SessionBar: NSView {
         update([:])
     }
     required init?(coder: NSCoder) { fatalError() }
+    var inputMeterWidth: CGFloat { meter.bounds.width }
     func update(_ value: [String: Any]) {
         let running = value["running"] as? Bool == true
         let busy = value["busy"] as? Bool == true || value["loadingModel"] as? Bool == true || value["initialized"] as? Bool != true
@@ -49,8 +52,9 @@ final class SessionBar: NSView {
         emergency.isEnabled = running && !busy
         for button in [start, pause, overlay, emergency] { button?.setAccessibilityLabel(button?.title); button?.needsDisplay = true }
         statusLabel.stringValue = value["status"] as? String ?? "正在初始化"
+        statusLabel.toolTip = statusLabel.stringValue
         privacy.stringValue = value["privacy"] as? String ?? ""
-        meter.doubleValue = min(1, (value["level"] as? Double ?? 0) * 6)
+        meter.setLevel((value["level"] as? Double ?? 0) * 6)
         let rtf = value["rtf"] as? Double ?? 0, model = value["selectedModel"] as? String ?? "尚未选择"
         metrics.stringValue = rtf > 0 ? String(format: "RTF %.2f · %@", rtf, model) : "模型：\(model)"
     }

@@ -118,6 +118,129 @@ final class ValueSlider: NSSlider {
 }
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 
+/// AppKit-created window buttons live in the content safe area so the system's
+/// window-sharing control can occupy the titlebar without covering them.
+final class WindowControlsView: NSStackView {
+    private weak var controlledWindow: NSWindow?
+    private var buttons: [NSWindow.ButtonType: NSButton] = [:]
+    private let fullscreenItem = NSMenuItem(title: "进入全屏", action: #selector(toggleFullscreen(_:)), keyEquivalent: "")
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .horizontal; alignment = .centerY; spacing = 8
+        setAccessibilityElement(false)
+        let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        for (type, label, action) in [
+            (NSWindow.ButtonType.closeButton, "关闭窗口", #selector(closeWindow(_:))),
+            (.miniaturizeButton, "最小化窗口", #selector(minimizeWindow(_:))),
+            (.zoomButton, "进入全屏", #selector(greenButtonPressed(_:))),
+        ] {
+            guard let button = NSWindow.standardWindowButton(type, for: style) else { continue }
+            let size = button.frame.size
+            button.target = self; button.action = action
+            button.setAccessibilityLabel(label)
+            button.widthAnchor.constraint(equalToConstant: max(14, size.width)).isActive = true
+            button.heightAnchor.constraint(equalToConstant: max(14, size.height)).isActive = true
+            addArrangedSubview(button); buttons[type] = button
+        }
+        buttons[.closeButton]?.toolTip = "关闭窗口（⌘W）"
+        buttons[.miniaturizeButton]?.toolTip = "最小化（⌘M）"
+        buttons[.zoomButton]?.setAccessibilityHelp("进入或退出全屏；按住 Option 点击可缩放窗口。全屏快捷键为 Control-Command-F。")
+        let menu = NSMenu(title: "窗口")
+        fullscreenItem.target = self; menu.addItem(fullscreenItem)
+        let zoom = menu.addItem(withTitle: "缩放窗口", action: #selector(zoomWindow(_:)), keyEquivalent: "")
+        zoom.target = self; buttons[.zoomButton]?.menu = menu
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    deinit { NotificationCenter.default.removeObserver(self) }
+    func attach(to window: NSWindow) {
+        NotificationCenter.default.removeObserver(self)
+        controlledWindow = window
+        window.setAccessibilityCloseButton(buttons[.closeButton])
+        window.setAccessibilityMinimizeButton(buttons[.miniaturizeButton])
+        window.setAccessibilityZoomButton(buttons[.zoomButton])
+        window.setAccessibilityFullScreenButton(buttons[.zoomButton])
+        for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification, NSWindow.didEndSheetNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(windowStateChanged(_:)), name: name, object: window)
+        }
+        updateWindowState()
+    }
+    var controlCount: Int { buttons.count }
+    @objc private func windowStateChanged(_ notification: Notification) { updateWindowState() }
+    private func updateWindowState() {
+        guard let window = controlledWindow else { return }
+        // Only the public standard button properties are changed. The system's
+        // sharing and privacy views remain untouched.
+        for type in buttons.keys { window.standardWindowButton(type)?.isHidden = true }
+        let fullscreen = window.styleMask.contains(.fullScreen)
+        buttons[.miniaturizeButton]?.isEnabled = window.styleMask.contains(.miniaturizable) && !fullscreen
+        buttons[.zoomButton]?.isEnabled = window.styleMask.contains(.resizable)
+        let title = fullscreen ? "退出全屏" : "进入全屏"
+        buttons[.zoomButton]?.setAccessibilityLabel(title)
+        buttons[.zoomButton]?.setAccessibilitySubrole(.fullScreenButton)
+        buttons[.zoomButton]?.toolTip = "\(title)（⌃⌘F）；Option 点击缩放"
+        fullscreenItem.title = title
+        buttons.values.forEach { $0.needsDisplay = true }
+    }
+    @objc private func closeWindow(_ sender: NSButton) { controlledWindow?.performClose(sender) }
+    @objc private func minimizeWindow(_ sender: NSButton) { controlledWindow?.performMiniaturize(sender) }
+    @objc private func greenButtonPressed(_ sender: NSButton) {
+        if NSApp.currentEvent?.modifierFlags.contains(.option) == true { controlledWindow?.performZoom(sender) }
+        else { controlledWindow?.toggleFullScreen(sender) }
+    }
+    @objc private func toggleFullscreen(_ sender: Any?) { controlledWindow?.toggleFullScreen(sender) }
+    @objc private func zoomWindow(_ sender: Any?) { controlledWindow?.performZoom(sender) }
+}
+
+/// A continuous input meter with the same 10 pt contour as the app's surfaces.
+/// Its semantic value remains available to VoiceOver without announcing every
+/// audio sample as a live-region update.
+final class InputLevelMeter: NSControl {
+    private let fill = CALayer()
+    private var level: Double = 0
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = MacUI.cornerRadius; layer?.masksToBounds = true
+        fill.anchorPoint = NSPoint(x: 0, y: 0.5); fill.cornerRadius = MacUI.cornerRadius
+        layer?.addSublayer(fill)
+        setAccessibilityElement(true); setAccessibilityRole(.levelIndicator)
+        setAccessibilityLabel("输入音量"); setAccessibilityMinValue(0); setAccessibilityMaxValue(100)
+        setLevel(0); updateColors()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var intrinsicContentSize: NSSize { NSSize(width: 112, height: 20) }
+    func setLevel(_ value: Double) {
+        level = value.isFinite ? min(1, max(0, value)) : 0
+        let percentage = Int((level * 100).rounded())
+        setAccessibilityValue(percentage)
+        setAccessibilityValueDescription("\(percentage)%")
+        updateFill(animated: window != nil && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+    override func layout() { super.layout(); updateFill(animated: false) }
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateColors() }
+    private func updateColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.09).cgColor
+            fill.backgroundColor = NSColor.systemGreen.cgColor
+        }
+    }
+    private func updateFill(animated: Bool) {
+        let previous = fill.presentation()?.bounds.width ?? fill.bounds.width
+        let width = bounds.width * level
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        fill.position = NSPoint(x: 0, y: bounds.midY)
+        fill.bounds = NSRect(x: 0, y: 0, width: width, height: bounds.height)
+        CATransaction.commit()
+        if animated {
+            let transition = CABasicAnimation(keyPath: "bounds.size.width")
+            transition.fromValue = previous; transition.toValue = width; transition.duration = 0.12
+            transition.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            fill.add(transition, forKey: "inputLevel")
+        } else { fill.removeAnimation(forKey: "inputLevel") }
+    }
+}
+
 /// Native selectable text, a find bar, and scroll preservation for streaming updates.
 final class TranscriptView: NSView {
     let text = NSTextView()

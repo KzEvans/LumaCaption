@@ -12,12 +12,14 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
     private let content = NSViewController()
     private let pageHost = NSView()
     private let sessionBar = SessionBar(frame: .zero)
+    private let windowControls = WindowControlsView()
     private let errorLabel = nativeLabel("", size: 12)
     private var errorBanner: NSStackView!
     private var state: [String: Any] = [:]
     private(set) var selectedPage = 0
     weak var window: NSWindow?
     private var sidebarItem: NSSplitViewItem!
+    private var windowControlClearance: NSLayoutConstraint?
 
     init(messenger: FlutterBinaryMessenger) {
         channel = FlutterMethodChannel(name: "lumacaption/design", binaryMessenger: messenger)
@@ -51,14 +53,18 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         brandImage.heightAnchor.constraint(equalToConstant: 24).isActive = true
         let brand = row([brandImage, nativeLabel("LumaCaption", size: 16, weight: .semibold)], spacing: 8)
         let footer = nativeLabel("让理解，跟上声音。", size: 11, secondary: true)
-        let sidebarStack = column([brand, scroll, footer], spacing: 18)
+        let sidebarStack = column([windowControls, brand, scroll, footer], spacing: 18)
         sidebar.view.addSubview(sidebarStack); sidebarStack.translatesAutoresizingMaskIntoConstraints = false
+        let sidebarTop = sidebarStack.topAnchor.constraint(equalTo: sidebar.view.safeAreaLayoutGuide.topAnchor, constant: 16)
+        sidebarTop.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            sidebarStack.topAnchor.constraint(equalTo: sidebar.view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            sidebarTop,
+            sidebarStack.topAnchor.constraint(greaterThanOrEqualTo: sidebar.view.safeAreaLayoutGuide.topAnchor, constant: 12),
             sidebarStack.leadingAnchor.constraint(equalTo: sidebar.view.leadingAnchor),
             sidebarStack.trailingAnchor.constraint(equalTo: sidebar.view.trailingAnchor),
             sidebarStack.bottomAnchor.constraint(equalTo: sidebar.view.bottomAnchor, constant: -20),
             scroll.widthAnchor.constraint(equalTo: sidebarStack.widthAnchor),
+            windowControls.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 20),
             brand.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 20),
             brand.trailingAnchor.constraint(lessThanOrEqualTo: sidebarStack.trailingAnchor, constant: -12),
             footer.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 20),
@@ -99,8 +105,8 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
     }
     func attach(to window: NSWindow) {
         self.window = window
-        // Keep an empty transparent system chrome so AppKit lays out its privacy
-        // and window controls. Session actions remain in the bottom control bar.
+        // AppKit owns the empty titlebar and its privacy/sharing affordances.
+        // Persistent factory-created buttons are placed below that area.
         let chrome = NSToolbar(identifier: "LumaCaption.windowChrome")
         chrome.delegate = self; chrome.displayMode = .iconOnly
         chrome.allowsUserCustomization = false; chrome.autosavesConfiguration = false
@@ -110,6 +116,13 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         window.titlebarSeparatorStyle = .none
         window.title = titles[selectedPage]; window.subtitle = ""
         window.isMovableByWindowBackground = true
+        windowControls.attach(to: window)
+        windowControlClearance?.isActive = false
+        if let guide = window.contentLayoutGuide as? NSLayoutGuide {
+            let clearance = windowControls.topAnchor.constraint(greaterThanOrEqualTo: guide.topAnchor, constant: 12)
+            clearance.isActive = true; windowControlClearance = clearance
+        }
+        window.recalculateKeyViewLoop()
     }
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
@@ -176,8 +189,10 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
             (view is NSControl || view is NSTextView ? [String(describing: type(of: view))] : []) + view.subviews.flatMap(controls)
         }
         return [
-            "renderer": "AppKit", "page": selectedPage, "toolbar": "windowControlsOnly", "sidebar": "NSSplitViewController",
+            "renderer": "AppKit", "page": selectedPage, "toolbar": "systemSharingArea", "sidebar": "NSSplitViewController",
             "toolbarActions": window?.toolbar?.items.count ?? 0,
+            "persistentWindowControls": windowControls.controlCount, "windowControlsLocation": "sidebarSafeArea",
+            "inputMeterWidth": sessionBar.inputMeterWidth,
             "fullSizeContentView": window?.styleMask.contains(.fullSizeContentView) == true,
             "titlebarTransparent": window?.titlebarAppearsTransparent == true,
             "cornerRadius": MacUI.cornerRadius, "sessionControls": controls(sessionBar),

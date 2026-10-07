@@ -17,6 +17,8 @@ class _Request {
   final int order;
   final token = TranslationCancellation();
   TranslationEvent? result;
+  int revision = 0;
+  int emittedRevision = 0;
   bool done = false;
 }
 
@@ -102,21 +104,36 @@ class TextTranslationQueue {
             sourceLanguage: r.source,
             targetLanguage: r.target,
             cancellation: r.token,
+            onPartial: (partial) {
+              if (_disposed ||
+                  g != generation ||
+                  r.token.isCanceled ||
+                  partial.isEmpty) {
+                return;
+              }
+              r.result = _result(r, g, partial, isFinal: false);
+              _emitOrdered();
+            },
           );
       if (_disposed || g != generation || r.token.isCanceled) return;
       _cache[key] = text;
       if (_cache.length > 128) _cache.remove(_cache.keys.first);
-      r.result = TranslationEvent(
-        generation: g,
-        segmentId: r.id,
-        revision: 1,
-        text: text,
-        isFinal: true,
-        audioStart: r.start,
-        audioEnd: r.end,
-        engine: adapter.capabilities.id,
-      );
+      r.result = _result(r, g, text, isFinal: true);
     } catch (e) {
+      // A partial remains provisional when its request does not complete.
+      if (r.result != null && !r.result!.isFinal) {
+        r.result = TranslationEvent(
+          generation: g,
+          segmentId: r.id,
+          revision: ++r.revision,
+          text: r.result!.text,
+          isFinal: false,
+          interrupted: true,
+          audioStart: r.start,
+          audioEnd: r.end,
+          engine: adapter.capabilities.id,
+        );
+      }
       if (!_disposed && g == generation && !r.token.isCanceled) {
         onFailure?.call(
           e is TranslationFailure
@@ -131,12 +148,40 @@ class TextTranslationQueue {
     }
   }
 
+  TranslationEvent _result(
+    _Request request,
+    int g,
+    String text, {
+    required bool isFinal,
+  }) => TranslationEvent(
+    generation: g,
+    segmentId: request.id,
+    revision: ++request.revision,
+    text: text,
+    isFinal: isFinal,
+    audioStart: request.start,
+    audioEnd: request.end,
+    engine: adapter.capabilities.id,
+  );
+
   void _emitOrdered() {
     while (_requests.isNotEmpty && _requests.first.done) {
       final r = _requests.removeAt(0);
       _started.remove(r);
-      if (r.result != null && !r.token.isCanceled) onEvent(r.result!);
+      _emitRequest(r);
     }
+    if (_requests.isNotEmpty) _emitRequest(_requests.first);
+  }
+
+  void _emitRequest(_Request request) {
+    final result = request.result;
+    if (result == null ||
+        request.token.isCanceled ||
+        result.revision <= request.emittedRevision) {
+      return;
+    }
+    request.emittedRevision = result.revision;
+    onEvent(result);
   }
 
   void _checkDrained() {
