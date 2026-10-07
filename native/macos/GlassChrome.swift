@@ -14,11 +14,14 @@ final class GlassChromeController: NSObject {
             guard let self else { return }
             switch call.method {
             case "sync":
+                let previousTheme = self.state["theme"] as? String ?? "system"
                 self.state = call.arguments as? [String: Any] ?? [:]
                 let theme = self.state["theme"] as? String ?? "system"
-                NSApp.windows.first(where: { $0.title == "LumaCaption" })?.appearance =
-                    theme == "dark" ? NSAppearance(named: .darkAqua) :
-                    theme == "light" ? NSAppearance(named: .aqua) : nil
+                if theme != previousTheme {
+                    NSApp.windows.first(where: { $0.title == "LumaCaption" })?.appearance =
+                        theme == "dark" ? NSAppearance(named: .darkAqua) :
+                        theme == "light" ? NSAppearance(named: .aqua) : nil
+                }
                 for view in self.views.allObjects { view.update(self.state) }
                 result(nil)
             case "status":

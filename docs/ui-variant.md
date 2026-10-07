@@ -14,4 +14,6 @@ macOS 26+ 使用系统 `NSGlassEffectView`：侧边导航和主要控制区是 A
 
 验证：Dart 分析、明暗主题、1120×800 / 860×650、125% 文字缩放的全部内容页组件测试；原生 Swift 编译和实际测试应用检查。普通组件测试使用 Flutter 导航替身，因此不代表原生玻璃绘制验收；实际 AppKit 材质类型与控件连接另由运行应用检查。原生 chrome 与 Flutter 内容的辅助功能树分别由各自框架维护。
 
+当前限制：在本机 macOS beta + Flutter 3.47.6 环境开启辅助功能自动化后，内容区切换页面出现 AXTree 更新错误；VoiceOver 尚未通过验收。导航、主要按钮的原生辅助功能和实际页面视觉切换已检查。保留稳定的独立页面实现，没有为绕过框架问题修改系统辅助功能权限或 Flutter 引擎。
+
 切换：`git switch codex/mac-liquid-glass` 或 `git switch codex/windows-material3`。
