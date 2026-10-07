@@ -10,6 +10,8 @@
 
 首矩阵八份数据完成后测试 harness 双重关闭 worker 导致清理挂起，已保留说明。修复关闭顺序后仅定向 EOF 两路复验，33s、exit0、worker 正常关闭；首段约8418→2933ms、EOF后363→508ms、WER均0。实际数值和实现局限见 [VAD实验](vad-endpoint.md)。本轮没有播放、扬声器/AirPods、麦克风、系统采集或在线 API/钥匙串操作；没有替换 `/Applications/LumaCaption.app` 或原 `dist/` +7 包。实验包单独输出 `dist/vad-endpoint/`，不把文件测试当新包 TCC 采集验收。
 
+实验 DMG 已构建：`dist/vad-endpoint/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，**12,139,080 字节**，SHA256 `f78ba4acf2482d3fa47fcff0f5ba8c2ca65165135cd719613bea4ae9afc72c62`。清单记录源码 `4b96b32`、构建时无未提交源码、0.1.0+8、Whisper ABI2、实际随包 Silero 权重885098字节；ad-hoc，未公证。DMG只读挂载后的应用深度签名检查通过，包内dylib与VAD权重实际静音运行公开JFK概率检测通过，343完整窗，关闭正常。包内首次显式加载此次1.509s（含库/worker初始化），平均处理3.76ms/100ms输入；不把首次加载计入稳态帧成本。已卸载验证映像。Documents中的松散app复制带入File Provider元数据，清理该生成副本的扩展属性后也通过签名；交付以已验证DMG为准。稳定安装仍为+7，未调用采集或重做TCC授权。
+
 ## 一秒首次预览、500 ms 节奏与后台暖机（2026-10-07，已安装 +7 基线）
 
 源码 `a664727`，包版本 `0.1.0+7`，已安装到 `/Applications/LumaCaption.app`。本地识别＋文本翻译第 1 秒触发首次快照，后续最低 500 ms，繁忙时通过 EMA 放慢到最多 3 秒；只留最新待处理预览、最终窗口优先。MT 增长预览仍有独立 1.5 秒音频门槛，真实修订与 final 可绕过。原文稳定前缀使用正常颜色，尾部使用次级颜色；前缀可退回，partial 不变成已确认或可导出 final。原生主窗、悬浮窗与 Flutter 备用界面均使用相同显示含义。8 秒最长上下文和 600 ms 静音收尾保留。

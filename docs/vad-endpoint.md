@@ -61,3 +61,7 @@ LUMA_OUTPUT_DIRECTORY="$PWD/dist/vad-endpoint" scripts/build_macos.sh
 ```
 
 缺少正式签名和公证时仍为 ad-hoc 开发包；本次不替换稳定安装副本、不重做系统采集授权。
+
+## 构建产物
+
+实验 DMG 版本0.1.0+8，源码 `4b96b32`、构建时源码干净；12,139,080字节，SHA256 `f78ba4acf2482d3fa47fcff0f5ba8c2ca65165135cd719613bea4ae9afc72c62`。只读挂载签名验证和包内CPU VAD静音加载/公开fixture检查通过。此次包内首次加载1.509s（含动态库与worker初始化），稳态平均3.76ms/100ms；首次会话准备时间另计。仍为未公证的ad-hoc实验包，不替换已安装+7。
