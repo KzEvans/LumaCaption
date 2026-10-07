@@ -34,14 +34,18 @@ final class NativeBridge: NSObject, FlutterStreamHandler {
             switch method {
             case "start":
                 Task { @MainActor in
-                    do { try await audio.start(source: args["source"] as? String ?? "system", deviceID: args["deviceId"] as? String); result(nil) }
-                    catch { result(FlutterError(code: "capture", message: error.localizedDescription, details: nil)) }
+                    let source = args["source"] as? String ?? "system"
+                    do { try await audio.start(source: source, deviceID: args["deviceId"] as? String); result(nil) }
+                    catch {
+                        let report = CaptureErrorReport(error, source: source)
+                        result(FlutterError(code: report.code, message: report.message, details: report.details))
+                    }
                 }
             case "stop": audio.stop(); result(nil)
             case "pause": audio.pause(); result(nil)
             case "resume": audio.resume(); result(nil)
             case "devices": result(AudioCapture.devices())
-            case "permissions": result(AudioCapture.permissions())
+            case "permissions": result(audio.permissions())
             case "status": result(["running": audio.running])
             case "overlay.show": overlay.show(); result(nil)
             case "overlay.hide": overlay.hide(); result(nil)

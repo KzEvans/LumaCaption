@@ -303,7 +303,7 @@ final class HistoryPage: FormPage, NSSearchFieldDelegate {
         let footer = row([persist, nativeLabel("保存字幕历史到本机", size: 12), spacer(), clear])
         let note = nativeLabel("仅导出已确认字幕。SRT / VTT 需要单个会话及有效时间；搜索只筛选阅读区。", size: 11, secondary: true)
         let title = nativeLabel("历史与导出", size: MacUI.headingSize, weight: .semibold)
-        let body = column([title, filter, transcript, footer, note], spacing: 16); pin(body, in: view, inset: 24)
+        let body = column([title, filter, transcript, footer, note], spacing: 12); pin(body, in: view, inset: 24)
         for item in [title, filter, transcript, footer, note] { item.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
         transcript.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         transcript.setContentHuggingPriority(.defaultLow, for: .vertical)
@@ -342,12 +342,12 @@ final class SettingsPage: FormPage {
     override func loadView() {
         super.loadView()
         heading("设置与诊断", detail: "查看声音权限、验证本地识别，并了解当前运行状态。")
-        group("声音权限", rows: [("系统声音", detail("system")), ("麦克风", detail("microphone")), ("操作", row([
+        group("声音权限", rows: [("系统声音", detail("system")), ("麦克风", detail("microphone")), ("正在运行的应用", detail("appPath", text: Bundle.main.bundleURL.path)), ("操作", row([
             ActionButton("刷新状态", symbol: "arrow.clockwise") { [weak self] in self?.send("refresh", [:]) },
             ActionButton("打开隐私设置…", symbol: "gearshape") {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") { NSWorkspace.shared.open(url) }
             }, spacer(),
-        ]))], note: "只有你开始字幕时才会采集所选声音来源。")
+        ]))], note: "只有开始字幕时才会采集声音。授权对应当前应用副本；开发测试包更新后可能需要重新添加授权。更改权限后，请完全退出并重新打开应用。")
         fileButton = ActionButton("选择 WAV 文件…", symbol: "doc.badge.waveform") { [weak self] in self?.send("processFile", [:]) }
         group("本地识别验证", rows: [("当前模型", detail("model")), ("音频文件", fileButton)], note: "WAV 文件在本地静默处理，不会播放。验证前需准备本地模型；离线模式不会访问翻译服务。")
         group("运行状态", rows: [("状态", detail("status")), ("处理速度", detail("rtf")), ("最终段耗时", detail("latency")), ("丢弃音频帧", detail("drops"))])
@@ -361,7 +361,7 @@ final class SettingsPage: FormPage {
     override func update(_ value: [String: Any]) {
         super.update(value)
         let permissions = value["permissions"] as? [String: Any] ?? [:]
-        let labels = ["authorized": "已允许", "granted": "已允许", "notGranted": "尚未允许", "denied": "已拒绝", "restricted": "受系统限制", "notDetermined": "尚未请求"]
+        let labels = ["authorized": "已允许", "granted": "已允许", "notGranted": "尚未允许", "notVerified": "开始采集时确认", "restartRequired": "授权已开启 · 请重启应用", "notAuthorized": "当前副本未获授权", "denied": "已拒绝", "restricted": "受系统限制", "notDetermined": "尚未请求"]
         for key in ["system", "microphone"] { let raw = permissions[key] as? String ?? "未知"; details[key]?.stringValue = labels[raw] ?? raw }
         details["model"]?.stringValue = value["selectedModel"] as? String ?? ""
         details["status"]?.stringValue = value["status"] as? String ?? ""

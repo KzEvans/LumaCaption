@@ -138,7 +138,18 @@ class AppController extends ChangeNotifier {
       FileSystemException f => f.message,
       _ => e.toString().replaceFirst('Bad state: ', ''),
     };
-    record('操作失败');
+    if (e is PlatformException) {
+      final details = e.details;
+      final nativeReason =
+          details is Map &&
+              details['domain'] is String &&
+              details['nativeCode'] is num
+          ? ' · ${details['domain']}/${details['nativeCode']}'
+          : '';
+      record('原生操作失败 · ${e.code}$nativeReason');
+    } else {
+      record('操作失败');
+    }
     notifyListeners();
   }
 
@@ -156,6 +167,10 @@ class AppController extends ChangeNotifier {
     devices = (list ?? [])
         .map((dynamic e) => Map<String, dynamic>.from(e as Map))
         .toList();
+    await refreshPermissions();
+  }
+
+  Future<void> refreshPermissions() async {
     permissions = Map<String, dynamic>.from(
       await native.call<Map>('permissions') ?? {},
     );
@@ -358,8 +373,17 @@ class AppController extends ChangeNotifier {
       _textAdapter?.dispose();
       _textAdapter = null;
       translating = false;
+      status = '无法开始字幕';
       rethrow;
     } finally {
+      if (!fileInput) {
+        try {
+          await refreshPermissions();
+        } catch (_) {
+          // A status read must not replace the actual capture failure.
+          record('权限状态刷新失败');
+        }
+      }
       busy = false;
       notifyListeners();
     }
@@ -387,6 +411,7 @@ class AppController extends ChangeNotifier {
         PlatformException(
           code: m['code'] as String? ?? 'capture',
           message: m['message'] as String?,
+          details: m['details'],
         ),
       );
       if (running) unawaited(guard(() => stop(emergency: true)));

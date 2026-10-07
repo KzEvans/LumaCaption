@@ -18,6 +18,41 @@ enum CaptureFailure: LocalizedError {
     }
 }
 
+/// Preserve ScreenCaptureKit's reason instead of treating every start failure as
+/// a privacy denial. In particular, -3818 is an audio-start failure, not -3801.
+struct CaptureErrorReport {
+    let code: String
+    let message: String
+    let details: [String: Any]
+
+    static func isSystemPermissionDenied(_ error: Error) -> Bool {
+        let native = error as NSError
+        return native.domain == SCStreamErrorDomain && native.code == SCStreamError.Code.userDeclined.rawValue
+    }
+
+    init(_ error: Error, source: String) {
+        let native = error as NSError
+        details = [
+            "domain": native.domain, "nativeCode": native.code, "source": source,
+            "appPath": Bundle.main.bundleURL.path,
+            "bundleIdentifier": Bundle.main.bundleIdentifier ?? ""
+        ]
+        if source == "system" && Self.isSystemPermissionDenied(error) {
+            code = "systemCapturePermissionDenied"
+            message = "macOS 未允许当前这份 LumaCaption 采集系统声音。若已在系统设置开启，请完全退出并重新打开；仍失败时，请确认允许的是正在运行的应用副本。"
+        } else if source == "microphone", let failure = error as? CaptureFailure, case .permissionDenied = failure {
+            code = "microphonePermissionDenied"
+            message = failure.localizedDescription
+        } else if native.domain == SCStreamErrorDomain && native.code == SCStreamError.Code.failedToStartAudioCapture.rawValue {
+            code = "systemAudioStartFailed"
+            message = "系统声音流启动失败，请检查音频输出设备后重试。\(native.localizedDescription)"
+        } else {
+            code = "capture"
+            message = native.localizedDescription
+        }
+    }
+}
+
 /// A bounded handoff between real-time callbacks, conversion, and Flutter's UI queue.
 /// The capture callback never waits for conversion, Dart, or the network.
 final class PCMDelivery {
@@ -146,6 +181,7 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var token = 0
     private var lifecycle = 0
     private var isStarting = false
+    private var systemPermissionDenied = false
     private(set) var running = false
     var onEvent: (([String: Any]) -> Void)? {
         didSet { delivery.onEvent = onEvent }
@@ -162,7 +198,7 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    static func permissions() -> [String: String] {
+    func permissions() -> [String: String] {
         let microphone: String
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: microphone = "authorized"
@@ -171,7 +207,18 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         case .notDetermined: microphone = "notDetermined"
         @unknown default: microphone = "unknown"
         }
-        return ["microphone": microphone, "system": CGPreflightScreenCaptureAccess() ? "authorized" : "notGranted"]
+        let preflight = CGPreflightScreenCaptureAccess()
+        let system: String
+        if running && stream != nil {
+            system = "authorized"
+        } else if systemPermissionDenied {
+            system = preflight ? "restartRequired" : "notAuthorized"
+        } else {
+            // A CoreGraphics screen preflight is only a hint. The user's Start
+            // action calls ScreenCaptureKit itself; never block on this value.
+            system = preflight ? "authorized" : "notVerified"
+        }
+        return ["microphone": microphone, "system": system]
     }
 
     static func devices() -> [[String: Any]] {
@@ -216,6 +263,7 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                 guard lifecycle == operation else { return }
                 try startMicrophone(deviceID: deviceID, token: currentToken)
             } else if source == "system" {
+                systemPermissionDenied = false
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
                 guard lifecycle == operation else { return }
                 guard let display = content.displays.first else { throw CaptureFailure.noDisplay }
@@ -244,7 +292,10 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             running = true
             onEvent?(["type": "status", "status": "capturing", "source": source])
         } catch {
-            if lifecycle == operation { stop() }
+            if lifecycle == operation {
+                if source == "system" { systemPermissionDenied = CaptureErrorReport.isSystemPermissionDenied(error) }
+                stop()
+            }
             throw error
         }
     }
@@ -321,7 +372,9 @@ final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.stream === stream else { return }
             self.stop()
-            self.onEvent?(["type": "error", "code": "systemCaptureStopped", "message": error.localizedDescription])
+            self.systemPermissionDenied = CaptureErrorReport.isSystemPermissionDenied(error)
+            let report = CaptureErrorReport(error, source: "system")
+            self.onEvent?(["type": "error", "code": report.code, "message": report.message, "details": report.details])
         }
     }
 

@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         viewMenu.addItem(.separator())
         for (i, title) in design.titles.enumerated() { let item = viewMenu.addItem(withTitle: title, action: #selector(WorkbenchController.goPage(_:)), keyEquivalent: String(i + 1)); item.tag = i; item.target = design }
         let windowItem = NSMenuItem(); menu.addItem(windowItem); let windows = NSMenu(title: "窗口"); windowItem.submenu = windows
+        windows.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windows.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windows.addItem(withTitle: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         windows.addItem(withTitle: "全部置于前方", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")

@@ -2,7 +2,7 @@ import AppKit
 import FlutterMacOS
 
 /// Every visible macOS view belongs to AppKit. The Flutter engine is a backend host.
-final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
+final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate, NSMenuItemValidation {
     let root = NSSplitViewController()
     let pages: [FormPage] = [LivePage(), ModelsPage(), ProvidersPage(), AppearancePage(), HistoryPage(), SettingsPage()]
     let titles = ["实时字幕", "模型管理", "翻译服务", "字幕外观", "历史与导出", "设置与诊断"]
@@ -43,8 +43,15 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         table.allowsEmptySelection = false
         table.setAccessibilityLabel("LumaCaption 侧边栏")
         scroll.documentView = table
+        let brandImage = NSImageView()
+        if let url = Bundle.main.url(forResource: "LumaCaption", withExtension: "icns") { brandImage.image = NSImage(contentsOf: url) }
+        brandImage.imageScaling = .scaleProportionallyUpOrDown
+        brandImage.setAccessibilityElement(false)
+        brandImage.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        brandImage.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        let brand = row([brandImage, nativeLabel("LumaCaption", size: 16, weight: .semibold)], spacing: 8)
         let footer = nativeLabel("让理解，跟上声音。", size: 11, secondary: true)
-        let sidebarStack = column([scroll, footer], spacing: 18)
+        let sidebarStack = column([brand, scroll, footer], spacing: 18)
         sidebar.view.addSubview(sidebarStack); sidebarStack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             sidebarStack.topAnchor.constraint(equalTo: sidebar.view.safeAreaLayoutGuide.topAnchor, constant: 16),
@@ -52,6 +59,8 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
             sidebarStack.trailingAnchor.constraint(equalTo: sidebar.view.trailingAnchor),
             sidebarStack.bottomAnchor.constraint(equalTo: sidebar.view.bottomAnchor, constant: -20),
             scroll.widthAnchor.constraint(equalTo: sidebarStack.widthAnchor),
+            brand.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 20),
+            brand.trailingAnchor.constraint(lessThanOrEqualTo: sidebarStack.trailingAnchor, constant: -12),
             footer.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 20),
             footer.trailingAnchor.constraint(lessThanOrEqualTo: sidebarStack.trailingAnchor, constant: -20),
         ])
@@ -90,12 +99,20 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
     }
     func attach(to window: NSWindow) {
         self.window = window
-        window.toolbar = nil
+        // Keep an empty transparent system chrome so AppKit lays out its privacy
+        // and window controls. Session actions remain in the bottom control bar.
+        let chrome = NSToolbar(identifier: "LumaCaption.windowChrome")
+        chrome.delegate = self; chrome.displayMode = .iconOnly
+        chrome.allowsUserCustomization = false; chrome.autosavesConfiguration = false
+        if #available(macOS 15.0, *) { chrome.allowsDisplayModeCustomization = false }
+        window.toolbar = chrome; window.toolbarStyle = .unified; chrome.isVisible = true
         window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.title = titles[selectedPage]; window.subtitle = ""
         window.isMovableByWindowBackground = true
     }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [] }
     func send(_ action: String, _ args: [String: Any] = [:], completion: ((Bool) -> Void)? = nil) {
         if action == "navigate" { navigate(args["page"] as? Int ?? 0); completion?(true); return }
         var payload = args; payload["action"] = action
@@ -159,7 +176,8 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
             (view is NSControl || view is NSTextView ? [String(describing: type(of: view))] : []) + view.subviews.flatMap(controls)
         }
         return [
-            "renderer": "AppKit", "page": selectedPage, "toolbar": "none", "sidebar": "NSSplitViewController",
+            "renderer": "AppKit", "page": selectedPage, "toolbar": "windowControlsOnly", "sidebar": "NSSplitViewController",
+            "toolbarActions": window?.toolbar?.items.count ?? 0,
             "fullSizeContentView": window?.styleMask.contains(.fullSizeContentView) == true,
             "titlebarTransparent": window?.titlebarAppearsTransparent == true,
             "cornerRadius": MacUI.cornerRadius, "sessionControls": controls(sessionBar),
