@@ -82,3 +82,9 @@ LUMA_OUTPUT_DIRECTORY="$PWD/dist/vad-guard" scripts/build_macos.sh
 ## +8 历史构建产物
 
 实验 DMG 版本0.1.0+8，源码 `4b96b32`、构建时源码干净；12,139,080字节，SHA256 `f78ba4acf2482d3fa47fcff0f5ba8c2ca65165135cd719613bea4ae9afc72c62`。只读挂载签名验证和包内CPU VAD静音加载/公开fixture检查通过。此次包内首次加载1.509s（含动态库与worker初始化），稳态平均3.76ms/100ms；首次会话准备时间另计。仍为未公证的ad-hoc实验包，不替换已安装+7。
+
+## +9 修正构建产物
+
+实验 DMG 版本 0.1.0+9，应用源码 `6f2a202`、构建时源码干净，输出至 `dist/vad-guard/`。148 项普通测试和 6 项包内原生 Whisper / VAD 静音验收通过；分析无问题，只读挂载签名校验通过。未播放声音、未采集音频、未调用 MT 服务，未替换已安装副本或公开 +7 Release。
+
+12139224 字节，SHA256 `2a18f7e21cbc23a2dd1b1a8b357d93a1d84f6e2f2fd96a0fa73dcb26cc0d57ce`；构建清单和校验文件与 DMG 同目录。仍为未公证的 ad-hoc 开发测试包。
