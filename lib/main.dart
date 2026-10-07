@@ -17,6 +17,9 @@ void main(List<String> args) {
       source = option('test-source'),
       model = option('test-model'),
       output = option('test-output');
+  final testMode = option('test-mode') ?? 'offline';
+  final onlineTest = option('test-online') == 'true';
+  final pacedTest = option('test-paced') == 'true';
   controller.testMode = wav != null || source != null;
   runApp(LumaApp(controller: controller));
   if (controller.testMode) {
@@ -31,19 +34,46 @@ void main(List<String> args) {
       }
 
       try {
-        if (model == null || output == null) {
-          throw const FormatException('测试入口需要 test-model 和 test-output');
+        if (!['offline', 'realtime', 'text'].contains(testMode)) {
+          throw const FormatException('test-mode 仅支持 offline、realtime 或 text');
+        }
+        if (output == null || (testMode != 'realtime' && model == null)) {
+          throw const FormatException('测试入口需要 test-output；本地识别还需要 test-model');
         }
         if (wav != null && source != null) {
           throw const FormatException('请选择 WAV 文件或原生采集中的一种测试');
         }
+        if (testMode != 'offline' &&
+            (wav == null || !onlineTest || !pacedTest)) {
+          throw const FormatException(
+            '在线验收仅支持明确指定 WAV、test-online=true 和 test-paced=true',
+          );
+        }
         await report({'status': 'loadingModel'});
         await controller.initialize();
-        controller.settings.mode = 'offline';
-        await controller.loadModel(model);
+        controller.settings.mode = testMode;
+        controller.settings.sourceLanguage =
+            option('test-source-language') ??
+            controller.settings.sourceLanguage;
+        controller.settings.targetLanguage =
+            option('test-target-language') ??
+            controller.settings.targetLanguage;
+        final modelWatch = Stopwatch()..start();
+        if (testMode == 'realtime') {
+          controller.settings.modelPath = '';
+          controller.settings.cloudTranscription = true;
+        } else {
+          await controller.loadModel(model!);
+        }
+        modelWatch.stop();
+        controller.measureSession = pacedTest;
         await controller.toggleOverlay();
         if (wav != null) {
-          await controller.processFile(inputPath: wav);
+          await controller.processFile(
+            inputPath: wav,
+            paced: pacedTest,
+            allowOnline: onlineTest,
+          );
         } else {
           if (source != 'system' && source != 'microphone') {
             throw const FormatException('test-source 仅支持 system 或 microphone');
@@ -75,6 +105,21 @@ void main(List<String> args) {
           'status': controller.error.isEmpty ? 'ok' : 'failed',
           if (controller.error.isNotEmpty) 'message': controller.error,
           'input': wav != null ? 'wav' : source,
+          'mode': testMode,
+          'paced': pacedTest,
+          'sourceLanguage': controller.settings.sourceLanguage,
+          'targetLanguage': controller.settings.targetLanguage,
+          if (testMode == 'realtime')
+            'translationModel': controller.settings.modelId,
+          if (testMode == 'text')
+            'translationModel': controller.settings.textModel,
+          'modelLoadMs': testMode == 'realtime'
+              ? null
+              : modelWatch.elapsedMilliseconds,
+          if (testMode != 'realtime')
+            'modelPreparation': controller.modelPreparationTiming,
+          if (controller.sessionTiming != null)
+            'timing': controller.sessionTiming!.report(),
           'backend': controller.whisper.backend,
           'rtf': controller.rtf,
           'inferenceMs': controller.finalLatencyMs,
@@ -86,6 +131,20 @@ void main(List<String> args) {
               .where((s) => s.isFinal)
               .length,
           'text': exportSubtitles(controller.subtitles.segments),
+          'finalSubtitles': controller.subtitles.segments
+              .where((s) => s.generation == controller.generation && s.isFinal)
+              .map(
+                (s) => {
+                  'id': s.segmentId,
+                  'original': s.original,
+                  'translation': s.translation,
+                  'startUs': s.startUs,
+                  'endUs': s.endUs,
+                  'engine': s.engine,
+                  'error': s.error,
+                },
+              )
+              .toList(),
           'captureAfterStop': await controller.native.call<Map>('audio.status'),
           'permissions': controller.permissions,
           'overlayVisible': visible,
@@ -95,7 +154,13 @@ void main(List<String> args) {
       } catch (e) {
         if (controller.running) await controller.stop(emergency: true);
         controller.fail(e);
-        await report({'status': 'failed', 'message': controller.error});
+        await report({
+          'status': 'failed',
+          'mode': testMode,
+          'message': controller.error,
+          if (controller.sessionTiming != null)
+            'timing': controller.sessionTiming!.report(),
+        });
       }
     }());
   }

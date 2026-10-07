@@ -11,7 +11,7 @@ class AppSettings {
   String endpoint = '',
       workspace = '',
       region = 'cn-beijing',
-      modelId = 'qwen3.5-livetranslate-flash-realtime',
+      modelId = 'qwen3.8-livetranslate-flash-realtime',
       sourceLanguage = 'auto',
       targetLanguage = 'zh';
   String textProvider = 'qwen',
@@ -20,6 +20,9 @@ class AppSettings {
   String proxy = '', theme = 'system', display = 'bilingual';
   double fontSize = 28, opacity = 0.8;
   bool cloudTranscription = false, persistHistory = false;
+  // Qwen 3.8 always emits source text; the saved switch is optional for 3.5.
+  bool get usesCloudTranscription =>
+      modelId.startsWith('qwen3.8-') || cloudTranscription;
   Map<String, dynamic> toJson() => {
     'mode': mode,
     'source': source,

@@ -259,7 +259,14 @@ class _ShellState extends State<Shell> {
     ),
     child: Row(
       children: [
-        Text(labels[page], style: Theme.of(context).textTheme.titleLarge),
+        Flexible(
+          child: Text(
+            labels[page],
+            style: Theme.of(context).textTheme.titleLarge,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
         if (c.testMode || c.fileInput) ...[
           const SizedBox(width: 12),
           Text(
@@ -374,6 +381,7 @@ class _ShellState extends State<Shell> {
     void Function(String) onChanged, {
     bool enabled = true,
   }) => DropdownButtonFormField<String>(
+    isExpanded: true,
     initialValue: choices.containsKey(value) ? value : choices.keys.first,
     decoration: InputDecoration(labelText: label),
     items: choices.entries
@@ -517,7 +525,7 @@ class _ShellState extends State<Shell> {
                 c.settings.mode == 'realtime'
                     ? '原文与译文分别显示；按真实关联信息对齐。'
                     : c.settings.mode == 'text'
-                    ? '仅已确认原文进入文本翻译。'
+                    ? '稳定原文预览提前翻译，完成后校正。'
                     : '本地原文字幕保留在当前会话内。',
                 style: TextStyle(
                   fontSize: 11,
@@ -636,7 +644,12 @@ class _ShellState extends State<Shell> {
             ),
             const SizedBox(width: 9),
             Text(
-              s.isFinal ? '已确认' : s.error ?? '识别中',
+              s.error ??
+                  (s.stash.isNotEmpty
+                      ? (s.isFinal ? '原文已确认 · 译文可修订' : '预览 · 可修订')
+                      : s.isFinal
+                      ? '已确认'
+                      : '识别中 · 可修订'),
               style: const TextStyle(fontSize: 10),
             ),
             const Spacer(),
@@ -652,10 +665,7 @@ class _ShellState extends State<Shell> {
           Semantics(
             label: s.original,
             excludeSemantics: true,
-            child: SelectableText(
-              s.original,
-              style: const TextStyle(fontSize: 17, height: 1.65),
-            ),
+            child: _originalSubtitle(s),
           ),
         if (s.translation.isNotEmpty || s.stash.isNotEmpty)
           Padding(
@@ -684,6 +694,27 @@ class _ShellState extends State<Shell> {
       ],
     ),
   );
+  Widget _originalSubtitle(SubtitleSegment s) {
+    final colors = Theme.of(context).colorScheme;
+    final stable = s.isFinal
+        ? s.original
+        : s.original.startsWith(s.stableOriginal)
+        ? s.stableOriginal
+        : '';
+    return SelectableText.rich(
+      TextSpan(
+        style: TextStyle(fontSize: 17, height: 1.65, color: colors.onSurface),
+        children: [
+          TextSpan(text: stable),
+          TextSpan(
+            text: s.original.substring(stable.length),
+            style: TextStyle(color: colors.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _models() {
     final m = c.models;
     if (m == null) return const Center(child: Text('模型目录不可用'));
@@ -905,7 +936,7 @@ class _ShellState extends State<Shell> {
   Widget _providers() => _scroll([
     _caption('选择符合当前工作模式的服务'),
     const Text(
-      '实时翻译上传音频；文本翻译只上传已确认原文。密钥按服务主机独立保存。',
+      '实时翻译上传音频；文本翻译仅上传原文，含可修订预览。密钥按服务主机独立保存。',
       style: TextStyle(fontSize: 13),
     ),
     const SizedBox(height: 20),
@@ -917,10 +948,10 @@ class _ShellState extends State<Shell> {
         children: [
           Text('默认千问实时模型', style: TextStyle(fontWeight: FontWeight.w600)),
           SizedBox(height: 8),
-          SelectableText('qwen3.5-livetranslate-flash-realtime'),
+          SelectableText('qwen3.8-livetranslate-flash-realtime'),
           SizedBox(height: 8),
           Text(
-            '纯文本字幕输出，单声道 16 kHz PCM 音频输入。源语言默认自动检测。云端原文识别需单独启用。',
+            '纯文本字幕输出，单声道 16 kHz PCM 音频输入。3.8 自动检测源语言并始终返回云端原文；3.5 可选云端原文。',
             style: TextStyle(fontSize: 12),
           ),
         ],
@@ -1196,6 +1227,7 @@ class _ProviderFormState extends State<ProviderForm> {
   late final TextEditingController workspace, endpoint, model, proxy;
   AppController get c => widget.c;
   bool get text => c.settings.mode == 'text';
+  bool get realtime38 => !text && model.text.trim().startsWith('qwen3.8-');
   bool reveal = false;
   @override
   void initState() {
@@ -1237,7 +1269,7 @@ class _ProviderFormState extends State<ProviderForm> {
           controller: t,
           enabled: !c.running,
           decoration: InputDecoration(labelText: label, hintText: hint),
-          onChanged: (_) => apply(),
+          onChanged: (_) => setState(apply),
         ),
       );
   @override
@@ -1318,7 +1350,8 @@ class _ProviderFormState extends State<ProviderForm> {
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  initialValue: c.settings.sourceLanguage,
+                  key: ValueKey('source-language-$realtime38'),
+                  initialValue: realtime38 ? 'auto' : c.settings.sourceLanguage,
                   decoration: const InputDecoration(labelText: '源语言'),
                   items: const [
                     DropdownMenuItem(value: 'auto', child: Text('自动检测')),
@@ -1327,7 +1360,7 @@ class _ProviderFormState extends State<ProviderForm> {
                     DropdownMenuItem(value: 'ja', child: Text('日语')),
                     DropdownMenuItem(value: 'ko', child: Text('韩语')),
                   ],
-                  onChanged: c.running
+                  onChanged: c.running || realtime38
                       ? null
                       : (v) => c.settings.sourceLanguage = v!,
                 ),
@@ -1356,9 +1389,13 @@ class _ProviderFormState extends State<ProviderForm> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('启用云端原文识别'),
-              subtitle: const Text('可在无本地模型时显示原文，可能产生额外服务费用。'),
-              value: c.settings.cloudTranscription,
-              onChanged: c.running
+              subtitle: Text(
+                realtime38
+                    ? '3.8 始终返回云端原文，无需本地识别。'
+                    : '可在无本地模型时显示原文，可能产生额外服务费用。',
+              ),
+              value: realtime38 || c.settings.cloudTranscription,
+              onChanged: c.running || realtime38
                   ? null
                   : (v) => setState(() => c.settings.cloudTranscription = v),
             ),

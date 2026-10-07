@@ -45,6 +45,51 @@ void main() {
     isFinal: true,
   );
 
+  test('test-mode history clearing preserves saved user history', () async {
+    final dir = await Directory.systemTemp.createTemp('luma-history-');
+    final native = _Native(dir.path);
+    final c = AppController(bridge: native)
+      ..testMode = true
+      ..supportDirectory = dir.path;
+    final store = HistoryStore(dir.path);
+    try {
+      await store.save([first]);
+      c.subtitles.segments.add(second);
+      await c.clearHistory();
+      expect(c.subtitles.segments, isEmpty);
+      expect((await store.load()).single.original, first.original);
+    } finally {
+      c.dispose();
+      await native.events.close();
+      await dir.delete(recursive: true);
+    }
+  });
+
+  test(
+    'confirmed source persists without provisional or interrupted translation',
+    () async {
+      final dir = await Directory.systemTemp.createTemp(
+        'luma-preview-history-',
+      );
+      try {
+        final pending = first.translated('预览译文', translationFinal: false);
+        final interrupted = first.translated(
+          '中断草稿',
+          translationFinal: false,
+          interrupted: true,
+        );
+        final store = HistoryStore(dir.path);
+        await store.save([pending, interrupted]);
+        final saved = await store.load();
+        expect(saved.map((s) => s.original), everyElement(first.original));
+        expect(saved.map((s) => s.translation), everyElement(isEmpty));
+        expect(saved.map((s) => s.stash), everyElement(isEmpty));
+      } finally {
+        await dir.delete(recursive: true);
+      }
+    },
+  );
+
   test('saved finals survive restart; sessions export separately', () async {
     final dir = await Directory.systemTemp.createTemp('luma-history-');
     final native = _Native(dir.path);

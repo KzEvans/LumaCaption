@@ -72,7 +72,9 @@ class TranslationEvent {
     this.audioEnd,
     this.isSource = false,
     this.interrupted = false,
-    this.engine = 'qwen3.5-livetranslate-flash-realtime',
+    this.sourceRevision = 0,
+    this.sourceFinal = true,
+    this.engine = 'qwen3.8-livetranslate-flash-realtime',
   });
   final int generation;
   final String segmentId;
@@ -85,6 +87,10 @@ class TranslationEvent {
   final Duration? audioEnd;
   final bool isSource;
   final bool interrupted;
+
+  /// The ASR snapshot translated by this event, independent of output revision.
+  final int sourceRevision;
+  final bool sourceFinal;
   final String engine;
   String get displayText => '$text$stash';
 }

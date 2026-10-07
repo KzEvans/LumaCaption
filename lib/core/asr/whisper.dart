@@ -13,7 +13,12 @@ class WhisperResult {
 }
 
 class _Bindings {
-  _Bindings(String path) : lib = DynamicLibrary.open(path);
+  _Bindings(String path) : lib = DynamicLibrary.open(path) {
+    final version = lib.lookupFunction<Int32 Function(), int Function()>(
+      'luma_abi_version',
+    )();
+    if (version != 2) throw StateError('Whisper 原生库版本不兼容，请重新安装完整应用');
+  }
   final DynamicLibrary lib;
   late final create = lib
       .lookupFunction<
@@ -22,9 +27,33 @@ class _Bindings {
       >('luma_create');
   late final run = lib
       .lookupFunction<
-        Int32 Function(Pointer<Void>, Pointer<Float>, Int32, Pointer<Utf8>),
-        int Function(Pointer<Void>, Pointer<Float>, int, Pointer<Utf8>)
+        Int32 Function(
+          Pointer<Void>,
+          Pointer<Float>,
+          Int32,
+          Pointer<Utf8>,
+          Pointer<Utf8>,
+          Int32,
+        ),
+        int Function(
+          Pointer<Void>,
+          Pointer<Float>,
+          int,
+          Pointer<Utf8>,
+          Pointer<Utf8>,
+          int,
+        )
       >('luma_run');
+  late final prepare = lib
+      .lookupFunction<
+        Void Function(Pointer<Void>),
+        void Function(Pointer<Void>)
+      >('luma_prepare');
+  late final backend = lib
+      .lookupFunction<
+        Pointer<Utf8> Function(Pointer<Void>),
+        Pointer<Utf8> Function(Pointer<Void>)
+      >('luma_backend');
   late final count = lib
       .lookupFunction<
         Int32 Function(Pointer<Void>),
@@ -65,9 +94,10 @@ class WhisperEngine {
   Isolate? _isolate;
   int _handle = 0, _id = 0;
   bool _closing = false;
+  String _backend = 'Whisper · 未加载';
   final Map<int, Completer<List<WhisperResult>>> _pending = {};
   bool get ready => _handle != 0 && !_closing;
-  String get backend => 'CPU · whisper.cpp v1.8.1';
+  String get backend => _backend;
   static String libraryPath() {
     final custom = Platform.environment['LUMA_WHISPER_LIBRARY'];
     if (custom != null) return custom;
@@ -95,6 +125,7 @@ class WhisperEngine {
       if (m['type'] == 'ready') {
         _port = m['port'] as SendPort;
         _handle = m['handle'] as int;
+        _backend = m['backend'] as String;
         if (!loaded.isCompleted) loaded.complete();
       }
       if (m['type'] == 'loadError') {
@@ -136,11 +167,14 @@ class WhisperEngine {
   Future<List<WhisperResult>> transcribe(
     Float32List samples, {
     String language = 'auto',
+    String prompt = '',
+    bool isFinal = true,
   }) async {
     if (!ready) throw StateError('模型尚未加载');
     if (_pending.isNotEmpty) throw StateError('推理工作线程忙');
     final id = ++_id, c = Completer<List<WhisperResult>>();
     _pending[id] = c;
+    _bindings!.prepare(Pointer<Void>.fromAddress(_handle));
     _port!.send({
       'type': 'run',
       'id': id,
@@ -151,6 +185,8 @@ class WhisperEngine {
         ),
       ]),
       'language': language,
+      'prompt': prompt,
+      'isFinal': isFinal,
     });
     final timer = Timer(const Duration(seconds: 45), () {
       cancel();
@@ -189,6 +225,7 @@ class WhisperEngine {
     _port = null;
     _handle = 0;
     _bindings = null;
+    _backend = 'Whisper · 未加载';
   }
 }
 
@@ -210,6 +247,7 @@ void _worker(List<dynamic> args) async {
       'type': 'ready',
       'port': commands.sendPort,
       'handle': handle.address,
+      'backend': b.backend(handle).toDartString(),
     });
   } catch (e) {
     out.send({'type': 'loadError', 'message': e.toString()});
@@ -230,9 +268,17 @@ void _worker(List<dynamic> args) async {
           .asFloat32List();
       final ptr = calloc<Float>(samples.length);
       final language = (m['language'] as String).toNativeUtf8();
+      final prompt = (m['prompt'] as String).toNativeUtf8();
       try {
         ptr.asTypedList(samples.length).setAll(0, samples);
-        final code = b.run(handle, ptr, samples.length, language);
+        final code = b.run(
+          handle,
+          ptr,
+          samples.length,
+          language,
+          prompt,
+          m['isFinal'] == true ? 1 : 0,
+        );
         if (code != 0) throw StateError('Whisper 已取消或推理失败 ($code)');
         final result = <List<dynamic>>[];
         for (var i = 0; i < b.count(handle); i++) {
@@ -248,6 +294,7 @@ void _worker(List<dynamic> args) async {
       } finally {
         calloc.free(ptr);
         calloc.free(language);
+        calloc.free(prompt);
       }
     }
   }

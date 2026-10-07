@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumacaption/app/controller.dart';
 import 'package:lumacaption/app/shell.dart';
 import 'package:lumacaption/core/storage/native_bridge.dart';
+import 'package:lumacaption/core/subtitles/subtitles.dart';
 
 class _Native extends NativeBridge {
   _Native(this.path);
@@ -30,8 +31,136 @@ class _Native extends NativeBridge {
 }
 
 void main() {
-  for (final size in [const Size(1120, 800), const Size(860, 650)]) {
-    testWidgets('desktop pages actionable at $size without overflow', (
+  testWidgets(
+    '3.8 cloud source controls preserve the optional 3.5 preference',
+    (tester) async {
+      final dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('luma-provider-ui-'),
+      ))!;
+      final native = _Native(dir.path);
+      final c = AppController(bridge: native)..testMode = true;
+      try {
+        await tester.runAsync(c.initialize);
+        c.settings.sourceLanguage = 'en';
+        c.settings.cloudTranscription = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(child: ProviderForm(c: c)),
+            ),
+          ),
+        );
+        final cloud = find.widgetWithText(SwitchListTile, '启用云端原文识别');
+        var control = tester.widget<SwitchListTile>(cloud);
+        expect(control.value, true);
+        expect(control.onChanged, isNull);
+        expect(c.settings.cloudTranscription, false);
+        expect(find.text('自动检测'), findsOneWidget);
+
+        await tester.enterText(
+          find.byWidgetPredicate(
+            (w) => w is TextField && w.decoration?.labelText == '模型 ID',
+          ),
+          'qwen3.5-livetranslate-flash-realtime',
+        );
+        await tester.pump();
+        control = tester.widget<SwitchListTile>(cloud);
+        expect(control.value, false);
+        expect(control.onChanged, isNotNull);
+        expect(find.text('英语'), findsOneWidget);
+        expect(c.settings.sourceLanguage, 'en');
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        c.dispose();
+        await native.events.close();
+        await tester.runAsync(() => dir.delete(recursive: true));
+      }
+    },
+  );
+
+  for (final brightness in [Brightness.light, Brightness.dark]) {
+    testWidgets(
+      'source stability colors preserve partial status in $brightness',
+      (tester) async {
+        tester.view.physicalSize = const Size(1120, 800);
+        tester.view.devicePixelRatio = 1;
+        final dir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('luma-stable-ui-'),
+        ))!;
+        final native = _Native(dir.path);
+        final c = AppController(bridge: native)..testMode = true;
+        try {
+          await tester.runAsync(c.initialize);
+          const original = 'Hi 👋 世界 again';
+          for (final (stable, confirmed, expectedStable) in [
+            ('Hi 👋 世界', false, 'Hi 👋 世界'),
+            ('', false, ''),
+            ('Different source', false, ''),
+            ('Hi', true, original),
+          ]) {
+            c.subtitles.segments
+              ..clear()
+              ..add(
+                SubtitleSegment(
+                  generation: c.generation,
+                  segmentId: 'test-source',
+                  original: original,
+                  stableOriginal: stable,
+                  isFinal: confirmed,
+                ),
+              );
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: ThemeData(
+                  useMaterial3: true,
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: accent,
+                    brightness: brightness,
+                  ),
+                ),
+                home: Shell(c: c),
+              ),
+            );
+            await tester.pumpAndSettle();
+            final selectable = tester.widget<SelectableText>(
+              find.byWidgetPredicate(
+                (w) =>
+                    w is SelectableText &&
+                    w.textSpan?.toPlainText() == original,
+              ),
+            );
+            final span = selectable.textSpan!;
+            final parts = span.children!.cast<TextSpan>();
+            final colors = Theme.of(
+              tester.element(find.byType(Shell)),
+            ).colorScheme;
+            expect(span.toPlainText(), original);
+            expect(parts[0].text, expectedStable);
+            expect(span.style!.color, colors.onSurface);
+            expect(parts[1].text, original.substring(expectedStable.length));
+            expect(parts[1].style!.color, colors.onSurfaceVariant);
+            expect(find.text(confirmed ? '已确认' : '识别中 · 可修订'), findsOneWidget);
+            expect(tester.takeException(), isNull);
+          }
+        } finally {
+          await tester.pumpWidget(const SizedBox());
+          c.dispose();
+          await native.events.close();
+          await tester.runAsync(() => dir.delete(recursive: true));
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        }
+      },
+    );
+  }
+  for (final (size, brightness, scale) in [
+    (const Size(1120, 800), Brightness.light, 1.0),
+    (const Size(1120, 800), Brightness.dark, 1.25),
+    (const Size(860, 650), Brightness.light, 1.25),
+    (const Size(860, 650), Brightness.dark, 1.0),
+  ]) {
+    testWidgets('Flutter fallback pages at $size $brightness scale $scale', (
       tester,
     ) async {
       tester.view.physicalSize = size;
@@ -47,12 +176,26 @@ void main() {
           ListenableBuilder(
             listenable: c,
             builder: (context, _) => MaterialApp(
-              theme: ThemeData(useMaterial3: true),
+              theme: ThemeData(
+                useMaterial3: true,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: accent,
+                  brightness: brightness,
+                ),
+              ),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(scale),
+                  disableAnimations: true,
+                ),
+                child: child!,
+              ),
               home: Shell(c: c),
             ),
           ),
         );
         await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '实时字幕');
         expect(find.text('字幕，从这里开始'), findsOneWidget);
         expect(find.textContaining('上传音频至翻译服务'), findsWidgets);
         for (final label in ['模型管理', '翻译服务', '字幕外观', '历史与导出', '设置与诊断']) {

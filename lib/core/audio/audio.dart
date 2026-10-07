@@ -133,9 +133,44 @@ class AudioChunk {
   final bool isFinal;
 }
 
-/// Bounded energy VAD with revisable 2s previews, 8s utterance windows,
+/// Bounded energy VAD with revisable previews, 8s utterance windows,
 /// 400ms pre-roll and 500ms overlap. This is a segmentation heuristic.
 class AudioSegmenter {
+  AudioSegmenter({
+    Duration previewInterval = const Duration(seconds: 2),
+    this.firstPreview = const Duration(seconds: 2),
+    this.enableAdaptive = false,
+  }) : assert(previewInterval > Duration.zero),
+       assert(firstPreview > Duration.zero),
+       _previewInterval = enableAdaptive
+           ? Duration(
+               microseconds: previewInterval.inMicroseconds.clamp(
+                 500000,
+                 3000000,
+               ),
+             )
+           : previewInterval;
+  final Duration firstPreview;
+  final bool enableAdaptive;
+  Duration _previewInterval;
+  double? _inferenceUs;
+  Duration get previewInterval => _previewInterval;
+
+  /// Retain a margin above measured decode time to avoid accumulating preview
+  /// work. Finals carry more audio, so they adjust the preview estimate gently.
+  void observeInference(Duration elapsed, {bool isFinal = false}) {
+    if (!enableAdaptive || elapsed <= Duration.zero) return;
+    final observed = elapsed.inMicroseconds.toDouble();
+    final previous = _inferenceUs;
+    final weight = isFinal ? 0.15 : 0.3;
+    _inferenceUs = previous == null
+        ? observed
+        : previous + (observed - previous) * weight;
+    _previewInterval = Duration(
+      microseconds: (_inferenceUs! * 1.25).round().clamp(500000, 3000000),
+    );
+  }
+
   final List<double> _samples = [];
   int? _startUs;
   int _silence = 0, _id = 0, _revision = 0, _lastPreview = 0;
@@ -186,7 +221,11 @@ class AudioSegmenter {
       }
       return [result];
     }
-    if (_speech && _samples.length - _lastPreview >= 32000) {
+    final previewSamples =
+        (_lastPreview == 0 ? firstPreview : previewInterval).inMicroseconds *
+        16000 ~/
+        1000000;
+    if (_speech && _samples.length - _lastPreview >= previewSamples) {
       _lastPreview = _samples.length;
       return [_snapshot(false)];
     }

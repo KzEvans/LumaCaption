@@ -1,8 +1,15 @@
 # 更新记录
 
+## 未发布 — main 共享核心同步（2026-10-07）
+
+- 从不含 VAD 的 `codex/mac-liquid-glass` 同步 Qwen 3.8 / 3.5 协议、MT 流式翻译与缓存、稳定字幕前缀和可修订译文、500ms 自适应预览、识别队列、提示词上下文与安全取消。
+- 同步后台模型校验/预加载/静音暖机、确认字幕历史和导出规则、实际节奏 WAV 输入与分阶段延迟报告。
+- Whisper 原生接口升级为 ABI 2，保留 CPU 后端和静态打包，支持 Windows；修正 3.8 云端原文与驻留本地模型重复识别的共享逻辑。
+- Flutter 页面保留原有设计，更新可修订状态、稳定文字显示和上传范围说明；未同步 Mac AppKit / Liquid Glass、Metal 或 Silero VAD。公开 Release v0.1.0 仍为 Mac +7。
+
 ## v0.1.0 — 首次公开开发测试版（2026-10-07）
 
-应用版本 **0.1.0+7**，源码来自 `codex/mac-liquid-glass`，发布 macOS Apple Silicon DMG。此版本不含 VAD 实验；`main` 保留早期共享基线。
+应用版本 **0.1.0+7**，源码来自 `codex/mac-liquid-glass`，发布 macOS Apple Silicon DMG。此版本不含 VAD 实验；发布时 `main` 保留早期共享基线。
 
 ### 界面与桌面体验
 
@@ -35,4 +42,4 @@
 
 ## 早期共享基线（2026-10-06）
 
-`main` 的应用版本为 0.1.0+1，建立 Flutter/Dart 共享业务与 Swift/C++ 原生桥接，包含 CPU Whisper、Qwen 3.5/text 翻译适配器、采集、悬浮字幕、历史与导出、模型校验及桌面构建脚本。该基线与当前 macOS Release 的原生界面和性能策略不同。
+最初共享基线的应用版本为 0.1.0+1，建立 Flutter/Dart 共享业务与 Swift/C++ 原生桥接，包含 CPU Whisper、Qwen 3.5/text 翻译适配器、采集、悬浮字幕、历史与导出、模型校验及桌面构建脚本。该基线与当前 macOS Release 的原生界面和性能策略不同。

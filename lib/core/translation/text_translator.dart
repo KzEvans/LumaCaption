@@ -107,6 +107,28 @@ class TextTranslationConfig {
       'TextTranslationConfig(modelId: $modelId, credentials: [redacted])';
 }
 
+enum TranslationRequestStage {
+  requestStarted,
+  connectionReady,
+  responseHeaders,
+  firstDelta,
+  completed,
+  canceled,
+  failed,
+}
+
+/// Numeric milestones for one HTTP attempt, with no request or response data.
+class TranslationRequestTiming {
+  const TranslationRequestTiming({
+    required this.stage,
+    required this.elapsedMs,
+    required this.attempt,
+  });
+  final TranslationRequestStage stage;
+  final int elapsedMs;
+  final int attempt;
+}
+
 abstract class TextTranslator {
   void dispose() {}
   TranslationCapabilities get capabilities;
@@ -118,6 +140,7 @@ abstract class TextTranslator {
     List<TranslationContext> context = const [],
     TranslationCancellation? cancellation,
     void Function(String)? onPartial,
+    void Function(TranslationRequestTiming)? onTiming,
   });
 }
 
@@ -232,10 +255,38 @@ class OpenAiTextTranslator extends _HttpTextTranslator {
 }
 
 abstract class _HttpTextTranslator implements TextTranslator {
-  @override
-  void dispose() {}
   _HttpTextTranslator(this.config);
   final TextTranslationConfig config;
+  HttpClient? _client;
+  bool _disposed = false;
+  final Set<TranslationCancellation> _activeTokens = {};
+
+  HttpClient get _httpClient {
+    if (_disposed) {
+      throw const TranslationFailure('canceled', '文本翻译已取消。');
+    }
+    if (_client != null) return _client!;
+    final client = HttpClient()..connectionTimeout = config.timeout;
+    try {
+      configureProxy(client, config.proxy);
+    } catch (_) {
+      client.close(force: true);
+      rethrow;
+    }
+    return _client = client;
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    for (final token in _activeTokens.toList()) {
+      token.cancel();
+    }
+    _client?.close(force: true);
+    _client = null;
+  }
+
   Map<String, Object?> buildRequest(
     String text,
     String source,
@@ -253,6 +304,7 @@ abstract class _HttpTextTranslator implements TextTranslator {
     List<TranslationContext> context = const [],
     TranslationCancellation? cancellation,
     void Function(String)? onPartial,
+    void Function(TranslationRequestTiming)? onTiming,
   }) async {
     final token = cancellation ?? TranslationCancellation();
     token.check();
@@ -273,50 +325,87 @@ abstract class _HttpTextTranslator implements TextTranslator {
     if (utf8.encode(body).length > 256 * 1024) {
       throw const TranslationFailure('text_limit', '文本、术语或上下文超过请求大小限制。');
     }
-    for (var attempt = 0; ; attempt++) {
-      final client = HttpClient()..connectionTimeout = config.timeout;
-      final removeListener = token.onCancel(() => client.close(force: true));
-      try {
-        configureProxy(client, config.proxy);
-        return await _request(
-          client,
-          uri,
-          body,
-          token,
-          onPartial,
-        ).timeout(config.timeout);
-      } catch (error) {
+    final client = _httpClient;
+    _activeTokens.add(token);
+    try {
+      for (var attempt = 0; ; attempt++) {
         token.check();
-        if (error is TranslationFailure &&
-            error.code == 'rate_limit' &&
-            attempt < config.rateLimitRetries) {
-          // Retry only explicit rejection. Ambiguous network/timeouts may already
-          // have been charged and therefore are never automatically resubmitted.
-          await Future<void>.delayed(
-            Duration(milliseconds: 600 * (1 << attempt)),
+        final work = _HttpTranslationAttempt(attempt, onTiming);
+        final removeListener = token.onCancel(() {
+          work.stop(const TranslationFailure('canceled', '文本翻译已取消。'));
+        });
+        try {
+          final result =
+              await Future.any([
+                _request(client, uri, body, token, onPartial, work),
+                work.interrupted,
+              ]).timeout(
+                config.timeout,
+                onTimeout: () {
+                  const failure = TranslationFailure(
+                    'timeout',
+                    '文本翻译超时；请求可能已被处理，未自动重复提交。',
+                  );
+                  work.stop(failure);
+                  throw failure;
+                },
+              );
+          token.check();
+          work.finish(TranslationRequestStage.completed);
+          return result;
+        } catch (error) {
+          work.finish(
+            token.isCanceled
+                ? TranslationRequestStage.canceled
+                : TranslationRequestStage.failed,
           );
           token.check();
-          continue;
+          if (error is TranslationFailure &&
+              error.code == 'rate_limit' &&
+              attempt < config.rateLimitRetries) {
+            // Only explicit rejection is retried. Network failures and timeouts
+            // may have been charged and are never automatically resubmitted.
+            await _retryDelay(
+              token,
+              Duration(milliseconds: 600 * (1 << attempt)),
+            );
+            continue;
+          }
+          if (error is TranslationFailure) rethrow;
+          if (error is HandshakeException) {
+            throw const TranslationFailure('tls', 'TLS 验证失败，请检查服务地址和证书。');
+          }
+          if (error is SocketException || error is HttpException) {
+            throw const TranslationFailure(
+              'network',
+              '文本翻译网络中断；未自动重复提交，请检查网络。',
+              retryable: true,
+            );
+          }
+          throw const TranslationFailure('response', '服务响应不符合所选文本翻译协议。');
+        } finally {
+          removeListener();
+          await work.release();
         }
-        if (error is TranslationFailure) rethrow;
-        if (error is TimeoutException) {
-          throw const TranslationFailure('timeout', '文本翻译超时；请求可能已被处理，未自动重复提交。');
-        }
-        if (error is HandshakeException) {
-          throw const TranslationFailure('tls', 'TLS 验证失败，请检查服务地址和证书。');
-        }
-        if (error is SocketException || error is HttpException) {
-          throw const TranslationFailure(
-            'network',
-            '文本翻译网络中断；未自动重复提交，请检查网络。',
-            retryable: true,
-          );
-        }
-        throw const TranslationFailure('response', '服务响应不符合所选文本翻译协议。');
-      } finally {
-        removeListener();
-        client.close(force: true);
       }
+    } finally {
+      _activeTokens.remove(token);
+    }
+  }
+
+  Future<void> _retryDelay(
+    TranslationCancellation token,
+    Duration delay,
+  ) async {
+    final canceled = Completer<void>();
+    final remove = token.onCancel(() {
+      if (!canceled.isCompleted) canceled.complete();
+    });
+    try {
+      await Future.any([Future<void>.delayed(delay), canceled.future]);
+      token.check();
+    } finally {
+      remove();
     }
   }
 
@@ -326,9 +415,13 @@ abstract class _HttpTextTranslator implements TextTranslator {
     String body,
     TranslationCancellation token,
     void Function(String)? onPartial,
+    _HttpTranslationAttempt work,
   ) async {
     token.check();
     final request = await client.postUrl(uri);
+    work.attachRequest(request);
+    work.check();
+    work.mark(TranslationRequestStage.connectionReady);
     request.followRedirects = false;
     for (final entry in config.headers.entries) {
       final key = entry.key.toLowerCase();
@@ -352,15 +445,24 @@ abstract class _HttpTextTranslator implements TextTranslator {
       ..set(HttpHeaders.authorizationHeader, 'Bearer ${config.apiKey}');
     request.write(body);
     final response = await request.close();
+    work.attachResponse(response);
+    work.check();
     token.check();
+    work.mark(TranslationRequestStage.responseHeaders);
     if (response.statusCode != 200) {
+      // Drain a bounded rejection body so retries can reuse this connection.
+      var bytes = 0;
+      await for (final chunk in work.responseBytes()) {
+        bytes += chunk.length;
+        if (bytes > 1024 * 1024) break;
+      }
       throw TranslationFailure.fromStatus(response.statusCode);
     }
     if (response.headers.contentType?.mimeType == 'text/event-stream') {
-      return _readSse(response, token, onPartial);
+      return _readSse(work.responseBytes(), token, onPartial, work);
     }
     final bytes = <int>[];
-    await for (final chunk in response) {
+    await for (final chunk in work.responseBytes()) {
       token.check();
       if (bytes.length + chunk.length > 1024 * 1024) {
         throw const TranslationFailure('response_limit', '服务响应超过大小限制。');
@@ -375,13 +477,15 @@ abstract class _HttpTextTranslator implements TextTranslator {
         '服务没有返回译文，请检查模型是否支持 Chat Completions。',
       );
     }
+    work.markFirstDelta();
     return text;
   }
 
   Future<String> _readSse(
-    HttpClientResponse response,
+    Stream<List<int>> response,
     TranslationCancellation token,
     void Function(String)? onPartial,
+    _HttpTranslationAttempt work,
   ) async {
     var result = '';
     var eventData = '';
@@ -398,6 +502,7 @@ abstract class _HttpTextTranslator implements TextTranslator {
       final decoded = jsonDecode(data);
       final delta = _content(decoded, delta: true);
       if (delta != null) {
+        if (delta.isNotEmpty) work.markFirstDelta();
         result += delta;
         if (result.length > 65536) {
           throw const TranslationFailure('response_limit', '译文长度超过限制。');
@@ -463,5 +568,109 @@ abstract class _HttpTextTranslator implements TextTranslator {
       throw const FormatException();
     }
     return content as String?;
+  }
+}
+
+class _HttpTranslationAttempt {
+  _HttpTranslationAttempt(this.attempt, this.onTiming) {
+    mark(TranslationRequestStage.requestStarted);
+  }
+  final int attempt;
+  final void Function(TranslationRequestTiming)? onTiming;
+  final Stopwatch _clock = Stopwatch()..start();
+  final Completer<String> _interrupted = Completer<String>();
+  HttpClientRequest? _request;
+  StreamIterator<List<int>>? _body;
+  TranslationFailure? _stopped;
+  bool _firstDelta = false;
+  bool _bodyStarted = false;
+  bool _finished = false;
+  bool _completed = false;
+  Future<String> get interrupted => _interrupted.future;
+
+  void mark(TranslationRequestStage stage) {
+    if (_finished || _stopped != null) return;
+    onTiming?.call(
+      TranslationRequestTiming(
+        stage: stage,
+        elapsedMs: _clock.elapsedMilliseconds,
+        attempt: attempt,
+      ),
+    );
+  }
+
+  void markFirstDelta() {
+    if (_firstDelta) return;
+    _firstDelta = true;
+    mark(TranslationRequestStage.firstDelta);
+  }
+
+  void finish(TranslationRequestStage stage) {
+    if (_finished) return;
+    _finished = true;
+    _completed = stage == TranslationRequestStage.completed;
+    onTiming?.call(
+      TranslationRequestTiming(
+        stage: stage,
+        elapsedMs: _clock.elapsedMilliseconds,
+        attempt: attempt,
+      ),
+    );
+    _clock.stop();
+  }
+
+  void attachRequest(HttpClientRequest request) {
+    _request = request;
+    if (_stopped != null) request.abort(_stopped);
+  }
+
+  void attachResponse(HttpClientResponse response) {
+    _body = StreamIterator(response);
+    if (_stopped != null) unawaited(_cancelBody());
+  }
+
+  void stop(TranslationFailure failure) {
+    if (_stopped != null) return;
+    _stopped = failure;
+    _request?.abort(failure);
+    unawaited(_cancelBody());
+    if (!_interrupted.isCompleted) _interrupted.completeError(failure);
+  }
+
+  void check() {
+    if (_stopped != null) throw _stopped!;
+  }
+
+  Stream<List<int>> responseBytes() async* {
+    final body = _body!;
+    _bodyStarted = true;
+    try {
+      while (await body.moveNext()) {
+        check();
+        yield body.current;
+      }
+      check();
+    } finally {
+      await body.cancel();
+    }
+  }
+
+  Future<void> release() async {
+    // Aborting affects only this request. The shared pool remains available to
+    // concurrent translations and subsequent turns.
+    if (!_completed) _request?.abort(_stopped);
+    await _cancelBody();
+  }
+
+  Future<void> _cancelBody() async {
+    final body = _body;
+    if (body == null) return;
+    // StreamIterator subscribes lazily. Subscribe before canceling if headers
+    // arrived during cancellation, so the response socket is actually released.
+    if (!_bodyStarted) {
+      _bodyStarted = true;
+      body.moveNext().ignore();
+    }
+    await body.cancel();
   }
 }

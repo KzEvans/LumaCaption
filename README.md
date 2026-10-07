@@ -8,7 +8,7 @@ LumaCaption 是一款桌面实时字幕应用：采集系统声音或麦克风�
 
 ## 当前 Release
 
-**v0.1.0（应用版本 0.1.0+7）来自 `codex/mac-liquid-glass` 分支，不含 VAD 实验。** `main` 保留早期共享基线；如需查看或构建当前 Release 的界面与功能，请切换到发布分支。
+**v0.1.0（应用版本 0.1.0+7）来自 `codex/mac-liquid-glass` 分支，不含 VAD 实验。** `main` 已同步该分支中可用于 Windows 的共享业务改进，保留 Flutter 界面与 CPU Whisper；如需查看或构建当前 Release 的原生 Mac 界面，请切换到发布分支。
 
 安装包支持 **macOS 13.3 及以上、Apple Silicon（arm64）**。macOS 26 及以上使用原生 Liquid Glass，较早系统使用 NSVisualEffectView；启用「降低透明度」时使用实色背景。主页面、全高度边栏、底部会话控制栏、菜单、表单、文件弹窗与悬浮字幕均由 AppKit 实现。
 
@@ -67,12 +67,14 @@ macOS 已验证真实模型推理、系统声音采集路径和悬浮窗原生�
 
 | 分支 | 用途 |
 | --- | --- |
-| [`main`](https://github.com/KzEvans/LumaCaption/tree/main) | 早期共享基线 0.1.0+1：Flutter 内容界面、原生采集与悬浮字幕、CPU Whisper、Qwen 3.5 / 文本翻译适配器；不是当前 Release 来源 |
+| [`main`](https://github.com/KzEvans/LumaCaption/tree/main) | 跨平台共享核心：Flutter 界面、CPU Whisper ABI 2、Qwen 3.8 / 3.5、MT 流式翻译、稳定字幕前缀与 500ms 预览、模型预加载；不含 Silero VAD 或 Mac 原生界面 |
 | [`codex/mac-liquid-glass`](https://github.com/KzEvans/LumaCaption/tree/codex/mac-liquid-glass) | 当前 macOS Release 0.1.0+7：原生 AppKit / Liquid Glass、Qwen 3.8、Metal Whisper、稳定前缀与 500 ms 预览、后台暖机 |
 | [`codex/windows-material3`](https://github.com/KzEvans/LumaCaption/tree/codex/windows-material3) | Windows Material 3 界面方向；尚待 Windows 编译与设备验收 |
 | [`codex/vad-endpoint-drain`](https://github.com/KzEvans/LumaCaption/tree/codex/vad-endpoint-drain) | 基于 macOS 优化版的断句与收尾实验：Silero VAD、过时预览取消、末句排空；未纳入当前 Release |
 
 VAD 判断语音活动与停顿，不保证语义上的完整句子。实验分支的结果应按该分支文档理解。
+
+`main` 的共享同步包括识别队列、提示词上下文、取消与关闭生命周期、后台模型校验和静音暖机、Qwen 3.8 独立协议、MT 流式输出和缓存、字幕修订与确认导出、实际节奏 WAV 测试及分阶段延迟记录。文本模式首个预览约 1s，后续按至少 500ms 自适应调度；仍使用原 RMS 静音分段。3.8 默认使用云端原文，驻留的本地模型只在在线会话中断时提供回退，避免重复原文。Windows 原生采集、凭据和构建脚本保持原有接口；Windows 实机验证仍待完成。共享同步范围与验收见 [测试记录](docs/testing.md)。
 
 ## 从源码构建
 
@@ -83,6 +85,8 @@ git clone https://github.com/KzEvans/LumaCaption.git
 cd LumaCaption
 git switch codex/mac-liquid-glass
 ```
+
+构建本次共享核心使用 `main`，保留 Flutter 界面和 CPU 后端。Windows Material 3 分支的专用界面仍在 `codex/windows-material3`，本次同步目标为 `main`。
 
 依赖版本为 **Flutter 3.47.6 / Dart 3.13.5、whisper.cpp v1.8.1**。Dart 依赖由 `pubspec.lock` 锁定。需要 Git 和 CMake 3.24 或以上；没有本地 Whisper 源码时，CMake FetchContent 会获取固定版本，首次构建需要网络。
 

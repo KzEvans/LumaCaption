@@ -64,6 +64,7 @@ Future<void> main(List<String> args) async {
         'whisper.cpp': '1.8.1',
       },
       'inferenceBackend': 'CPU',
+      'whisperAbiVersion': 2,
       'modelWeightsBundled': false,
       'platformAcceptance':
           'See docs/testing.md; a build does not prove capture acceptance',
