@@ -2,7 +2,21 @@
 
 更新：2026-10-07。这里区分源码实现、模拟协议测试、真实模型运行和设备验收。
 
-## 完整 AppKit 重构验收（2026-10-07）
+## Apple Music 布局修订验收（2026-10-07，当前包）
+
+源码 `9cc2ca9` 移除顶部工具栏、可见窗口标题和侧边栏切换按钮，启用透明标题栏与全尺寸内容。全高边栏包含系统红黄绿按钮；导航选中背景加宽。六页共享底部 NSGlassEffectView 会话栏，包含状态、电平、隐私、模型与开始/停止、暂停/继续、悬浮窗、立即停止。自定义按钮、卡片与玻璃表面统一 10 pt 圆角；原生按钮语义、禁用状态、焦点环、窗口和菜单行为保留。
+
+Swift 编译、完整 arm64 打包及签名验证通过。GUI 检查六页在 860×650 最小窗口下的布局、表单滚动、固定底栏、明暗切换并恢复跟随系统、悬浮窗显示/隐藏、系统全屏按钮进入与 Escape 退出。最终包另验证 ⌃⌘F 全屏快捷键。系统权限与音频设备没有修改；没有播放、录音或联网翻译。
+
+最终包静默真实 WAV 验证 `build/mac-music-final.json`：status=ok，110 帧、11 秒、2 条 final、0 丢弃；停止后原生采集 running=false。最后 3.5 秒推理 714 ms、RTF 0.204。原生文本区显示完整结果，底栏更新为已停止，暂停与立即停止禁用。界面属性返回 toolbar=none、fullSizeContentView=true、titlebarTransparent=true、cornerRadius=10、renderer=AppKit，玻璃会话栏与悬浮窗均为 NSGlassEffectView。穿透/恢复属性及不抢焦点检查通过。`build/mac-music-runtime.log` 无 AXTree 或约束错误。此轮仅修改 Swift UI，Dart 测试沿用下节已通过的 31 项结果。
+
+当前 DMG `dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`：9,396,036 字节，SHA256 `0d48d8cc513f400e9538d9a726aa643956f8ffca67918abe66a6e742668f9294`。清单记录源码 9cc2ca9、构建时无未提交源码；ad-hoc 签名，未公证。未覆盖此前安装副本。
+
+完整 VoiceOver、系统减少透明度、旧版系统回退和多屏仍未实机验收；麦克风和真实在线 API 未测试。
+
+## 完整 AppKit 重构验收（2026-10-07，原生首版历史记录）
+
+本节包数据属于此前原生首版，当前可下载包见上节。
 
 `codex/mac-liquid-glass` 的 `d41f113` 将六个可见页面全部改为 AppKit，使用原生 NSSplitViewController、NSToolbar、表单、NSTextView、NSAlert 与文件 Sheet。Flutter Engine 无视图运行，只承载共享业务；旧的 chrome 协调器已移除。
 
