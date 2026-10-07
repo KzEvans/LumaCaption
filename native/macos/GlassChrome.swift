@@ -174,7 +174,10 @@ private final class ChromeView: NSView {
     @objc private func toggleOverlay() { action("toggleOverlay", nil) }
     func update(_ values: [String: Any]) {
         selectedPage = max(0, min(5, values["page"] as? Int ?? 0))
-        for button in navigation { button.state = button.tag == selectedPage ? .on : .off }
+        for button in navigation {
+            button.state = button.tag == selectedPage ? .on : .off
+            button.isBordered = button.tag == selectedPage
+        }
         title.stringValue = labels[selectedPage]
         let running = values["running"] as? Bool ?? false
         start?.title = running ? "停止字幕" : "开始字幕"
