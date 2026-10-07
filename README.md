@@ -18,6 +18,10 @@ macOS 打开 `dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，拖动 Luma
 
 macOS 开发包更新可能改变 ad-hoc 代码身份，多个同名副本也容易混淆授权对象。「设置与诊断」显示正在运行的应用路径，并区分开始时确认、当前副本被拒绝与需重启的状态。若开关已开启但仍收到系统拒绝，请完全退出应用；必要时在「屏幕与系统音频录制」移除旧条目，再添加当前 `/Applications/LumaCaption.app` 后重新打开。权限以真实 ScreenCaptureKit 启动结果为准，音频设备启动错误不会再归类为未授权。
 
+实时音频模式默认使用 `qwen3.8-livetranslate-flash-realtime`，按 16 kHz PCM 分帧上传，仅请求文字输出；已有 3.5 配置继续使用对应协议。本地识别＋文本翻译使用 Whisper 与 `qwen-mt-flash`，只上传已确认原文，译文增量显示，未完成译文不会作为确认结果导出。两种服务的密钥分别按实际 Endpoint 存入钥匙串；Workspace 占位符在保存和读取凭据时一致展开。
+
+两条千问路径已用同一段 11 秒公开音频各做三轮真实静音测试，首段译文中位数分别为 3.28 秒和 9.01 秒。样本准确度、计时口径及 MT 单轮收尾延迟异常见 [实测报告](docs/qwen38-whisper-mt-benchmark.md)。
+
 ## 构建
 
 固定 Flutter 3.47.6（Dart 3.13.5），`pubspec.lock` 锁定依赖；Whisper v1.8.1。模型权重不打包。
@@ -70,8 +74,10 @@ dist/LumaCaption.app/Contents/MacOS/LumaCaption \
 
 此入口为明确测试模式，使用真实模型、音频、字幕和悬浮窗；没有生产 mock 或伪造输出。
 
+显式在线静音验收可增加 `--test-mode=realtime` 或 `--test-mode=text`、`--test-online=true --test-paced=true --test-source-language=en --test-target-language=zh`。它只读取指定 WAV，通过正常业务路径按 100 ms 分帧处理，不播放、不采集麦克风，不修改普通设置或历史。密钥读取已保存的系统安全存储，不接受密钥命令行参数；本地路径需 `--test-model`，实时云端路径不加载本地 Whisper。省略在线标记时仍为离线验收。报告区分模型加载、服务准备、首段原文、首段译文、末句收尾和音频帧调度；字幕时间未知时不会编造时间。
+
 受控原生采集测试可将 `--test-wav=...` 换为 `--test-source=system` 或 `--test-source=microphone`，再指定 `--test-duration=20`（1–120 秒）。它只运行离线模式，结束后停止采集，报告帧数、电平、转写和悬浮窗原生属性，不写普通设置或历史。测试音频需另行播放。命令行与正常 GUI 的 TCC 授权上下文可能不同；本机 CLI 的系统采集被 TCC 拒绝，正常 GUI 路径已实际通过。
 
 ## 当前未完成
 
-Windows AI Speech SDK 集成、MSIX、Windows 安装产物与实机验收；麦克风、悬浮窗完整手工交互验收；真实 Qwen API 联调；Metal 推理、Intel/Windows ARM64；术语与高级文本参数的完整 GUI、可配置全局快捷键 UI、英文界面完整本地化。性能数字只代表记录的测试条件；tiny 实时样本有误识别和漏词。
+Windows AI Speech SDK 集成、MSIX、Windows 安装产物与实机验收；麦克风、悬浮窗完整手工交互验收；其它 OpenAI-compatible 服务真实联调；Metal 推理、Intel/Windows ARM64；术语与高级文本参数的完整 GUI、可配置全局快捷键 UI、英文界面完整本地化。性能数字只代表记录的测试条件；此前 tiny 系统声音样本出现过误识别和漏词。

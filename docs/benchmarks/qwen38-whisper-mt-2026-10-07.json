@@ -1,0 +1,344 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-07",
+  "app": {
+    "name": "LumaCaption",
+    "version": "0.1.0+3",
+    "sourceRevision": "04b3b58"
+  },
+  "environment": {
+    "hardware": "Apple M2",
+    "memoryGiB": 16,
+    "os": "macOS 27.2 beta",
+    "flutter": "3.47.6",
+    "dart": "3.13.5"
+  },
+  "sample": {
+    "path": ".tools/whisper.cpp/samples/jfk.wav",
+    "public": true,
+    "durationMs": 11000,
+    "channels": 1,
+    "sampleRateHz": 16000,
+    "framesPerRun": 110,
+    "frameDurationMs": 100,
+    "pacing": "realtime",
+    "input": "silent file input; no playback, microphone or system capture",
+    "reference": "And so my fellow Americans ask not what your country can do for you ask what you can do for your country",
+    "referenceWords": 22,
+    "referenceSource": "https://github.com/ggml-org/whisper.cpp/blob/v1.8.1/README.md",
+    "normalization": "lowercase ASCII words; punctuation ignored"
+  },
+  "timing": {
+    "units": "milliseconds",
+    "basis": "Controller receipt of accepted nonempty subtitle events, relative to audio origin; pixel rendering and UI update scheduling are excluded.",
+    "origin": "audio input start; setup and local model load excluded",
+    "eofBasis": "actual controller EOF event",
+    "firstEvent": "accepted nonempty partial or final subtitle event",
+    "aggregation": "median, minimum and maximum; three runs per path; no run excluded"
+  },
+  "scope": "Three repeated runs per path on one public 11-second JFK sample. WER measures final source ASR, not Chinese translation accuracy or general model accuracy.",
+  "groups": {
+    "qwen38": {
+      "path": "qwen3.8-livetranslate-flash-realtime",
+      "upload": "PCM audio",
+      "runs": [
+        {
+          "run": 1,
+          "status": "ok",
+          "droppedFrames": 0,
+          "metricsMs": {
+            "firstSourceMs": 3236.971,
+            "firstSourceFinalMs": 11814.708,
+            "firstTranslationMs": 3277.117,
+            "firstTranslationFinalMs": 11815.286,
+            "lastSourceFinalAfterEofMs": 812.537,
+            "lastTranslationFinalAfterEofMs": 813.115
+          },
+          "modelLoadMs": null,
+          "asr": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "referenceWords": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 2,
+          "status": "ok",
+          "droppedFrames": 0,
+          "metricsMs": {
+            "firstSourceMs": 3361.574,
+            "firstSourceFinalMs": 11971.626,
+            "firstTranslationMs": 3413.937,
+            "firstTranslationFinalMs": 11971.926,
+            "lastSourceFinalAfterEofMs": 970.741,
+            "lastTranslationFinalAfterEofMs": 971.041
+          },
+          "modelLoadMs": null,
+          "asr": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "referenceWords": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 3,
+          "status": "ok",
+          "droppedFrames": 0,
+          "metricsMs": {
+            "firstSourceMs": 3150.269,
+            "firstSourceFinalMs": 11876.465,
+            "firstTranslationMs": 3171.076,
+            "firstTranslationFinalMs": 11876.567,
+            "lastSourceFinalAfterEofMs": 875.04,
+            "lastTranslationFinalAfterEofMs": 875.142
+          },
+          "modelLoadMs": null,
+          "asr": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "referenceWords": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        }
+      ],
+      "summaryMs": {
+        "firstSourceMs": {
+          "n": 3,
+          "median": 3236.971,
+          "min": 3150.269,
+          "max": 3361.574
+        },
+        "firstSourceFinalMs": {
+          "n": 3,
+          "median": 11876.465,
+          "min": 11814.708,
+          "max": 11971.626
+        },
+        "firstTranslationMs": {
+          "n": 3,
+          "median": 3277.117,
+          "min": 3171.076,
+          "max": 3413.937
+        },
+        "firstTranslationFinalMs": {
+          "n": 3,
+          "median": 11876.567,
+          "min": 11815.286,
+          "max": 11971.926
+        },
+        "lastSourceFinalAfterEofMs": {
+          "n": 3,
+          "median": 875.04,
+          "min": 812.537,
+          "max": 970.741
+        },
+        "lastTranslationFinalAfterEofMs": {
+          "n": 3,
+          "median": 875.142,
+          "min": 813.115,
+          "max": 971.041
+        }
+      },
+      "modelLoadMs": null,
+      "finalTextsIdenticalAcrossRuns": true,
+      "finalOriginal": "And so, my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+      "finalTranslation": "因此，我的美国同胞们，不要问你的国家能为你做什么，而要问你能为国家做些什么。",
+      "sourceFinalParts": [
+        "And so, my fellow Americans, ask not what your country can do for you, ask what you can do for your country."
+      ],
+      "translationFinalParts": [
+        "因此，我的美国同胞们，不要问你的国家能为你做什么，而要问你能为国家做些什么。"
+      ],
+      "werPercent": {
+        "n": 3,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      }
+    },
+    "whisper_mt": {
+      "path": "Whisper tiny multilingual -> qwen-mt-flash",
+      "upload": "recognized source text only; no audio upload",
+      "runs": [
+        {
+          "run": 1,
+          "status": "ok",
+          "droppedFrames": 0,
+          "metricsMs": {
+            "firstSourceMs": 4774.443,
+            "firstSourceFinalMs": 8485.993,
+            "firstTranslationMs": 9064.711,
+            "firstTranslationFinalMs": 9187.682,
+            "lastSourceFinalAfterEofMs": 417.543,
+            "lastTranslationFinalAfterEofMs": 673.118
+          },
+          "modelLoadMs": 942,
+          "asr": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "referenceWords": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 2,
+          "status": "ok",
+          "droppedFrames": 0,
+          "metricsMs": {
+            "firstSourceMs": 2483.586,
+            "firstSourceFinalMs": 8450.696,
+            "firstTranslationMs": 9010.24,
+            "firstTranslationFinalMs": 9123.809,
+            "lastSourceFinalAfterEofMs": 425.835,
+            "lastTranslationFinalAfterEofMs": 684.022
+          },
+          "modelLoadMs": 779,
+          "asr": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "referenceWords": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 3,
+          "status": "ok",
+          "droppedFrames": 0,
+          "metricsMs": {
+            "firstSourceMs": 2324.004,
+            "firstSourceFinalMs": 8361.018,
+            "firstTranslationMs": 8937.361,
+            "firstTranslationFinalMs": 9041.172,
+            "lastSourceFinalAfterEofMs": 328.335,
+            "lastTranslationFinalAfterEofMs": 12445.707
+          },
+          "modelLoadMs": 845,
+          "asr": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "referenceWords": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        }
+      ],
+      "summaryMs": {
+        "firstSourceMs": {
+          "n": 3,
+          "median": 2483.586,
+          "min": 2324.004,
+          "max": 4774.443
+        },
+        "firstSourceFinalMs": {
+          "n": 3,
+          "median": 8450.696,
+          "min": 8361.018,
+          "max": 8485.993
+        },
+        "firstTranslationMs": {
+          "n": 3,
+          "median": 9010.24,
+          "min": 8937.361,
+          "max": 9064.711
+        },
+        "firstTranslationFinalMs": {
+          "n": 3,
+          "median": 9123.809,
+          "min": 9041.172,
+          "max": 9187.682
+        },
+        "lastSourceFinalAfterEofMs": {
+          "n": 3,
+          "median": 417.543,
+          "min": 328.335,
+          "max": 425.835
+        },
+        "lastTranslationFinalAfterEofMs": {
+          "n": 3,
+          "median": 684.022,
+          "min": 673.118,
+          "max": 12445.707
+        }
+      },
+      "modelLoadMs": {
+        "n": 3,
+        "median": 845,
+        "min": 779,
+        "max": 942
+      },
+      "finalTextsIdenticalAcrossRuns": true,
+      "finalOriginal": "And so my fellow Americans ask not what your country can do for you. ask what you can do for your country.",
+      "finalTranslation": "因此，我的美国同胞们，请不要问国家能为你们做些什么。\n问问你能为你的国家做些什么。",
+      "sourceFinalParts": [
+        "And so my fellow Americans ask not what your country can do for you.",
+        "ask what you can do for your country."
+      ],
+      "translationFinalParts": [
+        "因此，我的美国同胞们，请不要问国家能为你们做些什么。",
+        "问问你能为你的国家做些什么。"
+      ],
+      "werPercent": {
+        "n": 3,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "localBackend": "whisper.cpp 1.8.1; CPU + Accelerate; no Metal",
+      "segmentation": "2-second revisable previews; 8-second maximum windows; only final source segments submitted to MT"
+    }
+  },
+  "semanticReviewCriteria": [
+    "Address to fellow Americans",
+    "Negation of asking country what it can do for you",
+    "country to you direction",
+    "you to country direction"
+  ],
+  "semanticReview": {
+    "method": "Bilingual review of the stable final translations; all three runs within each path produced identical final text.",
+    "qwen38": {
+      "AmericanAddress": "Preserved: 我的美国同胞们",
+      "negation": "Preserved: 不要问 … 而要问",
+      "countryToYou": "Preserved: 你的国家能为你做什么",
+      "youToCountry": "Preserved: 你能为国家做些什么",
+      "missingCoreMeaning": [],
+      "reversals": [],
+      "substantiveAdditions": [],
+      "style": "One connected sentence preserves the explicit rhetorical contrast. The omitted possessive in the second 国家 is recoverable from context."
+    },
+    "whisper_mt": {
+      "AmericanAddress": "Preserved: 我的美国同胞们",
+      "negation": "Preserved: 请不要问",
+      "countryToYou": "Preserved: 国家能为你们做些什么",
+      "youToCountry": "Preserved: 你能为你的国家做些什么",
+      "missingCoreMeaning": [],
+      "reversals": [],
+      "substantiveAdditions": [],
+      "style": "Separate translated segments weaken the explicit linkage between the two clauses, and address shifts from 你们 to 你. 请 and 问问 are stylistic choices, not new factual claims."
+    },
+    "scope": "The four core semantic points are preserved on this one sample. This is a qualitative sample review, not a translation-accuracy percentage."
+  },
+  "textRun3Outlier": {
+    "secondSourceFinalMs": 11329.707,
+    "secondTranslationFirstMs": 23446.6,
+    "secondTranslationFinalMs": 23447.079,
+    "firstTargetFromSecondSourceGapMs": 12116.893,
+    "interpretation": "Second source final arrived normally; extra waiting occurred between local source finalization and controller receipt of the accepted text translation event. The timings alone do not identify a server, network or client cause."
+  },
+  "sources": {
+    "qwen38": "https://help.aliyun.com/zh/model-studio/qwen3-8-livetranslate-flash-realtime",
+    "qwenMt": "https://help.aliyun.com/zh/model-studio/machine-translation/"
+  }
+}
