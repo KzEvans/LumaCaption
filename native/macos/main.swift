@@ -5,15 +5,37 @@ import FlutterMacOS
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var window: NSWindow!
     var bridge: NativeBridge!
-    var design: GlassChromeFactory!
+    var design: GlassChromeController!
     func applicationDidFinishLaunching(_ notification: Notification) {
         let controller = FlutterViewController(project: FlutterDartProject(precompiledDartBundle: nil))
         controller.backgroundColor = .clear
-        design = GlassChromeFactory(messenger: controller.engine.binaryMessenger)
-        controller.engine.registrar(forPlugin: "LumaGlassChrome").register(design, withId: "lumacaption/glass-chrome")
+        design = GlassChromeController(messenger: controller.engine.binaryMessenger)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "LumaCaption"; window.minSize = NSSize(width: 860, height: 650)
-        window.contentViewController = controller; window.delegate = self; window.isReleasedWhenClosed = false
+        let host = NSViewController(); host.view = NSView()
+        host.addChild(controller)
+        let navigation = design.create(role: "navigation")
+        let toolbar = design.create(role: "toolbar")
+        let content = controller.view
+        for view in [navigation, toolbar, content] {
+            host.view.addSubview(view); view.translatesAutoresizingMaskIntoConstraints = false
+        }
+        NSLayoutConstraint.activate([
+            navigation.leadingAnchor.constraint(equalTo: host.view.leadingAnchor),
+            navigation.topAnchor.constraint(equalTo: host.view.topAnchor),
+            navigation.bottomAnchor.constraint(equalTo: host.view.bottomAnchor),
+            navigation.widthAnchor.constraint(equalToConstant: 224),
+            toolbar.leadingAnchor.constraint(equalTo: navigation.trailingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
+            toolbar.topAnchor.constraint(equalTo: host.view.topAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: 78),
+            content.leadingAnchor.constraint(equalTo: navigation.trailingAnchor),
+            content.trailingAnchor.constraint(equalTo: host.view.trailingAnchor),
+            content.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            content.bottomAnchor.constraint(equalTo: host.view.bottomAnchor),
+        ])
+        window.contentViewController = host; window.delegate = self; window.isReleasedWhenClosed = false
+        window.initialFirstResponder = content
         window.setFrameAutosaveName("LumaCaption.main"); window.center()
         bridge = NativeBridge(messenger: controller.engine.binaryMessenger)
         bridge.overlay.showMainWindow = { [weak self] in self?.window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }

@@ -20,7 +20,7 @@ class _LumaAppState extends State<LumaApp> {
   @override
   void initState() {
     super.initState();
-    // Native platform views must not hide the Flutter content from VoiceOver.
+    // Expose Flutter content alongside native window controls for VoiceOver.
     _semantics = WidgetsBinding.instance.ensureSemantics();
     widget.controller.initialize();
   }
@@ -112,142 +112,137 @@ class _ShellState extends State<Shell> {
     child: Focus(
       autofocus: true,
       child: Scaffold(
-        body: Row(
-          children: [
-            if (nativeChrome)
-              const SizedBox(width: 224, child: MacChrome(role: 'navigation'))
-            else
-              Container(
-                width: 224,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  border: Border(
-                    right: BorderSide(color: Theme.of(context).dividerColor),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 33,
-                            height: 33,
-                            decoration: BoxDecoration(
-                              color: accent,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.closed_caption_outlined,
-                              color: Colors.white,
-                              size: 21,
-                            ),
+        body: nativeChrome
+            ? _workspace(toolbar: false)
+            : Row(
+                children: [
+                  Container(
+                    width: 224,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      border: Border(
+                        right: BorderSide(
+                          color: Theme.of(context).dividerColor,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(22, 30, 12, 26),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 33,
+                                height: 33,
+                                decoration: BoxDecoration(
+                                  color: accent,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.closed_caption_outlined,
+                                  color: Colors.white,
+                                  size: 21,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'LumaCaption',
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: -.4,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                'LumaCaption',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -.4,
+                        ),
+                        for (var i = 0; i < labels.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 3,
+                            ),
+                            child: Material(
+                              color: page == i
+                                  ? accent.withValues(alpha: .12)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(9),
+                              child: ListTile(
+                                dense: true,
+                                minLeadingWidth: 20,
+                                leading: Icon(
+                                  icons[i],
+                                  size: 20,
+                                  color: page == i ? accent : null,
+                                ),
+                                title: Text(
+                                  labels[i],
+                                  style: TextStyle(
+                                    fontWeight: page == i
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: page == i ? accent : null,
+                                  ),
+                                ),
+                                selected: page == i,
+                                onTap: () => setState(() => page = i),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(9),
                                 ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                    for (var i = 0; i < labels.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 3,
-                        ),
-                        child: Material(
-                          color: page == i
-                              ? accent.withValues(alpha: .12)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(9),
-                          child: ListTile(
-                            dense: true,
-                            minLeadingWidth: 20,
-                            leading: Icon(
-                              icons[i],
-                              size: 20,
-                              color: page == i ? accent : null,
-                            ),
-                            title: Text(
-                              labels[i],
-                              style: TextStyle(
-                                fontWeight: page == i
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: page == i ? accent : null,
+                        const Spacer(),
+                        Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '让理解，跟上声音。',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
                               ),
-                            ),
-                            selected: page == i,
-                            onTap: () => setState(() => page = i),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9),
-                            ),
+                              const SizedBox(height: 6),
+                              const Text(
+                                '桌面版 0.1.0',
+                                style: TextStyle(fontSize: 11),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    const Spacer(),
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '让理解，跟上声音。',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            '桌面版 0.1.0',
-                            style: TextStyle(fontSize: 11),
-                          ),
-                        ],
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: Column(
-                children: [
-                  nativeChrome
-                      ? const SizedBox(
-                          height: 78,
-                          child: MacChrome(role: 'toolbar'),
-                        )
-                      : _toolbar(),
-                  Expanded(
-                    child: !c.initialized
-                        ? const Center(child: CircularProgressIndicator())
-                        : _page(),
                   ),
-                  if (c.error.isNotEmpty) _error(),
-                  _statusbar(),
+                  Expanded(child: _workspace(toolbar: true)),
                 ],
               ),
-            ),
-          ],
-        ),
       ),
     ),
+  );
+  Widget _workspace({required bool toolbar}) => Column(
+    children: [
+      if (toolbar) _toolbar(),
+      Expanded(
+        child: !c.initialized
+            ? const Center(child: CircularProgressIndicator())
+            : _page(),
+      ),
+      if (c.error.isNotEmpty) _error(),
+      _statusbar(),
+    ],
   );
   Widget _toolbar() => Container(
     height: 78,

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'controller.dart';
 
@@ -44,15 +43,4 @@ class MacChromeCoordinator {
   }
 
   void dispose() => _channel.setMethodCallHandler(null);
-}
-
-class MacChrome extends StatelessWidget {
-  const MacChrome({super.key, required this.role});
-  final String role;
-  @override
-  Widget build(BuildContext context) => AppKitView(
-    viewType: 'lumacaption/glass-chrome',
-    creationParams: {'role': role},
-    creationParamsCodec: const StandardMessageCodec(),
-  );
 }

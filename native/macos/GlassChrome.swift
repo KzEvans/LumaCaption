@@ -1,8 +1,8 @@
 import AppKit
 import FlutterMacOS
 
-/// Platform views keep system glass and its controls in the same AppKit tree.
-final class GlassChromeFactory: NSObject, FlutterPlatformViewFactory {
+/// Native window chrome stays beside Flutter, with independent accessibility.
+final class GlassChromeController: NSObject {
     private let channel: FlutterMethodChannel
     private let views = NSHashTable<ChromeView>.weakObjects()
     private var state: [String: Any] = [:]
@@ -31,9 +31,7 @@ final class GlassChromeFactory: NSObject, FlutterPlatformViewFactory {
             }
         }
     }
-    func createArgsCodec() -> (FlutterMessageCodec & NSObjectProtocol)? { FlutterStandardMessageCodec.sharedInstance() }
-    func create(withViewIdentifier viewId: Int64, arguments args: Any?) -> NSView {
-        let role = (args as? [String: Any])?["role"] as? String ?? "navigation"
+    func create(role: String) -> NSView {
         let view = ChromeView(role: role) { [weak self] action, page in
             var value: [String: Any] = ["action": action]
             if let page { value["page"] = page }
