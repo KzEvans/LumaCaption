@@ -280,16 +280,19 @@ class _ShellState extends State<Shell> {
       ],
     ),
   );
-  Widget _page() => IndexedStack(
-    index: page,
-    children: [
-      _live(),
-      _models(),
-      _providers(),
-      _appearance(),
-      _history(),
-      _settings(),
-    ],
+  Widget _page() => Semantics(
+    key: ValueKey(page),
+    container: true,
+    explicitChildNodes: true,
+    label: labels[page],
+    child: switch (page) {
+      0 => _live(),
+      1 => _models(),
+      2 => _providers(),
+      3 => _appearance(),
+      4 => _history(),
+      _ => _settings(),
+    },
   );
   Widget _statusbar() => Container(
     height: 36,
