@@ -1,6 +1,16 @@
 # LumaCaption 0.1.0 验收记录
 
-更新：2026-10-06。这里区分源码实现、模拟协议测试、真实模型运行和设备验收。
+更新：2026-10-07。这里区分源码实现、模拟协议测试、真实模型运行和设备验收。
+
+## 界面分支验收（2026-10-07）
+
+Git 基线保留在 main；codex/mac-liquid-glass 与 codex/windows-material3 从同一基线分别开发。两分支的 Dart 分析均无问题，测试各为 **26 项通过，1 项可选 FFI 跳过**，新增覆盖明暗配色、125% 文字缩放和最小桌面布局。Windows Material 3 的 NavigationRail 在宽窄窗口切换展开状态；Windows 原生安装产物仍未构建。
+
+macOS 测试包 dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg 已构建，采用 ad-hoc 签名。实际运行的导航区为 NSGlassEffectView，224×618 点、6 个原生按钮；工具区为 NSGlassEffectView，636×78 点、2 个原生按钮。它们由 AppKit 窗口承载，FlutterViewController 负责实色内容区。GUI 截图检查了实际玻璃与页面绘制；模型、外观导航和悬浮窗按钮实际动作已验证。
+
+最终静音 WAV 验收 build/mac-glass-runtime.json：status=ok，110 帧、11 秒输入、2 条 final，结束后原生 running=false；最后 3.5 秒窗口推理 587 ms、RTF 0.168。没有播放音频、麦克风采集或联网翻译。原始采集权限验收继续沿用下文记录。
+
+辅助功能限制：原生导航与按钮的可访问状态可读。开启本机辅助功能自动化后，Flutter 内容区部分页面切换出现 AXTree 更新错误；未宣称 VoiceOver 验收通过，详见 docs/ui-variant.md。未修改系统权限或 Flutter 引擎来绕过该问题。13.3–15 的视觉效果回退和系统降低透明度路径已实现，尚未在对应环境实机验收。
 
 ## 测试环境
 
@@ -13,7 +23,7 @@
 
 `dart analyze lib test`：无问题。`dart analyze scripts/artifact_manifest.dart`：无问题。
 
-`flutter test --reporter expanded`：**24 项通过，1 项可选真实 FFI 测试跳过**。普通测试不使用 Key、不访问翻译服务、不产生 API 费用。覆盖：
+基线 `flutter test --reporter expanded`：**24 项通过，1 项可选真实 FFI 测试跳过**；本界面分支为 26 项通过。普通测试不使用 Key、不访问翻译服务、不产生 API 费用。覆盖：
 
 - PCM downmix/饱和，48→16 kHz 带抗混叠的重采样，以及跨帧连续性。
 - VAD、长句上限、收尾音频、同一片段的 partial 修订与 final 确认。
@@ -51,7 +61,7 @@ GUI 中实际完成 tiny 模型下载、可信 hash 校验和加载。实际 CPU
 
 macOS 产物为 dist/LumaCaption-0.1.0-macos-arm64.dmg，内含完整 .app、Flutter AOT/engine、Whisper 原生库和许可证。最低 macOS 13.3、arm64，模型按需下载。ad-hoc 签名，无 Developer ID、无公证，未开启 Hardened Runtime；正式身份构建时脚本才开启 Hardened Runtime。
 
-每次构建生成 `.sha256` 和 `.artifact.json`，记录文件、平台、架构、版本、实际 SHA256、签名类型、构建时间和源码 revision（本次没有 Git commit，记为 null）。当前文件以 dist 内的清单为准。
+每次构建生成 `.sha256` 和 `.artifact.json`，记录文件、平台、架构、版本、实际 SHA256、签名类型、构建时间和源码 revision。基线早期构建没有 Git commit；界面分支构建已记录实际提交。当前文件以 dist 内的清单为准。
 
 构建命令与使用方法见 README.md。macOS 实际交付走 scripts/build_macos.sh 的 CLT 原生宿主；仓库 macos/ 的 Flutter Xcode scaffold 尚未集成桥接，不应直接用 `flutter run -d macos` 声称完整功能。Windows scripts/build_windows.ps1 需要 Windows + VS2022/Windows SDK + Inno Setup；待该环境中运行及验证。
 
