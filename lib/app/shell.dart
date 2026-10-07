@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/semantics.dart';
 import '../core/models/model_manager.dart';
 import '../core/subtitles/subtitles.dart';
 import 'controller.dart';
@@ -16,19 +15,10 @@ class LumaApp extends StatefulWidget {
 }
 
 class _LumaAppState extends State<LumaApp> {
-  late final SemanticsHandle _semantics;
   @override
   void initState() {
     super.initState();
-    // Expose Flutter content alongside native window controls for VoiceOver.
-    _semantics = WidgetsBinding.instance.ensureSemantics();
     widget.controller.initialize();
-  }
-
-  @override
-  void dispose() {
-    _semantics.dispose();
-    super.dispose();
   }
 
   @override
