@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lumacaption/app/controller.dart';
 import 'package:lumacaption/core/asr/vad.dart';
 import 'package:lumacaption/core/asr/whisper.dart';
+import 'package:lumacaption/core/audio/audio.dart';
 import 'package:lumacaption/core/storage/native_bridge.dart';
 
 // This bridge provides temporary settings storage and consumes UI updates. It
@@ -313,7 +314,7 @@ void main() {
         'baseline': {'detector': 'RMS', 'silenceMs': 600, 'preempt': false},
         'experiment': {
           'detector': 'Silero v5.1.2',
-          'silenceMs': 384,
+          'silenceMs': AudioSegmenter.neuralSilenceMs,
           'preempt': true,
         },
         'preview': {

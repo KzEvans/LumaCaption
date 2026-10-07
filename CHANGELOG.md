@@ -30,7 +30,7 @@
 
 ## 尚未发布的分支
 
-- **`codex/vad-endpoint-drain`（0.1.0+8 实验）**：Silero VAD、384ms 非语音端点、过时在途预览取消、正常暂停/停止排空已收到的音频，保留真实末尾余量。VAD 判断声音活动，可能在语义未完整时切句；真实 EOF 收尾尚未改善，未纳入本次 Release。见 [实验说明](https://github.com/KzEvans/LumaCaption/blob/codex/vad-endpoint-drain/docs/vad-endpoint.md)。
+- **`codex/vad-endpoint-drain`（0.1.0+9 实验）**：修正 +8 提前断句和尾音裁剪：静音确认由 384ms 调整为 1600ms，短暂概率跌落后较轻语音仍可续接；普通静音保留 256ms 实际尾音，暂停/停止/EOF 保留整段已收到的 PCM。最小 500ms 预览、过时预览取消与末句排空保持。VAD 和 8s 窗上限仍可能拆分语义完整句子；未纳入当前 Release。见 [实验说明](https://github.com/KzEvans/LumaCaption/blob/codex/vad-endpoint-drain/docs/vad-endpoint.md)。
 - **`codex/windows-material3`**：Windows Material 3 界面方向，保留 CPU Whisper；等待 Windows 编译与设备验收。
 
 ## 早期共享基线（2026-10-06）

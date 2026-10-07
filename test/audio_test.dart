@@ -283,50 +283,84 @@ void main() {
       ),
   ];
 
-  test('neural endpoint accepts short speech after exactly 384ms silence', () {
-    final s = AudioSegmenter();
-    expect(classified(s, 8, 0, .5, value: .5), isEmpty);
-    expect(classified(s, 11, 256000, .1), isEmpty);
-    final finalChunk = classified(s, 1, 608000, .1).single;
-    expect(finalChunk.isFinal, true);
-    expect(finalChunk.endpointReason, 'silence');
-    expect(finalChunk.startUs, 0);
-    expect(finalChunk.speechEndUs, 256000);
-    expect(finalChunk.endUs, 352000);
-    expect(finalChunk.samples.length, 5632);
-    expect(finalChunk.samples.take(4096), everyElement(.5));
-    expect(finalChunk.samples.skip(4096), everyElement(0));
-    expect(s.flush(), isNull);
-  });
+  test(
+    'neural endpoint waits for 1600ms silence and retains a real 256ms tail',
+    () {
+      final s = AudioSegmenter();
+      expect(classified(s, 8, 0, .5, value: .5), isEmpty);
+      expect(classified(s, 49, 256000, .1), isEmpty);
+      final finalChunk = classified(s, 1, 1824000, .1).single;
+      expect(finalChunk.isFinal, true);
+      expect(finalChunk.endpointReason, 'silence');
+      expect(finalChunk.startUs, 0);
+      expect(finalChunk.speechEndUs, 256000);
+      expect(finalChunk.endUs, 512000);
+      expect(finalChunk.samples.length, 8192);
+      expect(finalChunk.samples.take(4096), everyElement(.5));
+      expect(finalChunk.samples.skip(4096), everyElement(0));
+      expect(s.flush(), isNull);
+    },
+  );
 
-  test('neural start/continue hysteresis uses probability rather than RMS', () {
+  test('neural onset remains strict but weak continuation survives a dip', () {
     final s = AudioSegmenter();
     // Loud input below start threshold is pre-roll, not speech evidence.
     expect(classified(s, 10, 0, .49, value: .75), isEmpty);
     expect(classified(s, 1, 320000, .5), isEmpty);
     expect(classified(s, 7, 352000, .35), isEmpty);
     expect(classified(s, 11, 576000, .34), isEmpty);
-    final result = classified(s, 1, 928000, .49).single;
-    // .49 cannot restart after .34 exited the speech state.
+    // A pending pause must not require a new onset. Quiet continuation at
+    // .35-.49 cancels the pause even after one or more below-.35 windows.
+    expect(classified(s, 1, 928000, .49), isEmpty);
+    expect(classified(s, 7, 960000, .35), isEmpty);
+    final result = classified(
+      s,
+      50,
+      1184000,
+      .34,
+    ).where((c) => c.isFinal).single;
     expect(result.endpointReason, 'silence');
-    expect(result.speechEndUs, 576000);
-    expect(result.endUs, 672000);
-  });
-
-  test('short neural gaps retain one utterance and all internal audio', () {
-    final s = AudioSegmenter();
-    expect(classified(s, 8, 0, .9, value: .5), isEmpty);
-    expect(classified(s, 6, 256000, .1), isEmpty); // 192ms pause.
-    expect(classified(s, 8, 448000, .9, value: .75), isEmpty);
-    final results = classified(s, 12, 704000, .1);
-    final result = results.where((c) => c.isFinal).single;
-    expect(result.startUs, 0);
-    expect(result.speechEndUs, 704000);
-    expect(result.endUs, 800000);
-    expect(result.samples.sublist(4096, 7168), everyElement(0));
-    expect(result.samples.sublist(7168, 11264), everyElement(.75));
+    expect(result.speechEndUs, 1184000);
+    expect(result.endUs, 1440000);
+    // A committed endpoint clears the latch: .49 alone cannot start the next.
+    expect(classified(s, 8, 2784000, .49, value: .75), isEmpty);
     expect(s.flush(), isNull);
   });
+
+  for (final pauseWindows in [6, 12, 25, 36, 44]) {
+    test(
+      '${pauseWindows * 32}ms sentence-internal pause keeps one neural utterance',
+      () {
+        final s = AudioSegmenter(
+          firstPreview: const Duration(seconds: 1),
+          previewInterval: const Duration(milliseconds: 500),
+        );
+        final chunks = classified(s, 8, 0, .9, value: .5);
+        final paused = classified(s, pauseWindows, 256000, .1);
+        expect(paused.where((c) => c.isFinal), isEmpty);
+        chunks.addAll(paused);
+        final resumedUs = 256000 + pauseWindows * 32000;
+        final resumed = classified(s, 8, resumedUs, .4, value: .75);
+        expect(resumed.where((c) => c.isFinal), isEmpty);
+        chunks.addAll(resumed);
+        final speechEndUs = resumedUs + 256000;
+        chunks.addAll(classified(s, 50, speechEndUs, .1));
+        final result = chunks.where((c) => c.isFinal).single;
+        expect(chunks.map((c) => c.segmentId).toSet(), {result.segmentId});
+        expect(result.startUs, 0);
+        expect(result.speechEndUs, speechEndUs);
+        expect(result.endUs, speechEndUs + 256000);
+        final resumeSample = 4096 + pauseWindows * 512;
+        expect(result.samples.sublist(4096, resumeSample), everyElement(0));
+        expect(
+          result.samples.sublist(resumeSample, resumeSample + 4096),
+          everyElement(.75),
+        );
+        expect(result.samples.skip(resumeSample + 4096), everyElement(0));
+        expect(s.flush(), isNull);
+      },
+    );
+  }
 
   test(
     'pure silence and less than 250ms classified bursts produce no final',
@@ -342,7 +376,7 @@ void main() {
       );
       final endpointBurst = AudioSegmenter();
       expect(classified(endpointBurst, 7, 0, .9), isEmpty);
-      expect(classified(endpointBurst, 12, 224000, .1), isEmpty);
+      expect(classified(endpointBurst, 50, 224000, .1), isEmpty);
       expect(endpointBurst.flush(), isNull);
       expect(
         AudioSegmenter().flush(tail: Float32List(137), tailTimestampUs: 0),
@@ -355,20 +389,26 @@ void main() {
     final s = AudioSegmenter();
     classified(s, 20, 0, .1, value: .25);
     classified(s, 8, 640000, .9, value: .5);
-    final first = classified(s, 12, 896000, .1).single;
+    final first = classified(s, 50, 896000, .1).where((c) => c.isFinal).single;
     expect(first.startUs, 240000);
     expect(first.speechEndUs, 896000);
-    expect(first.endUs, 992000);
+    expect(first.endUs, 1152000);
     expect(first.samples.take(6400), everyElement(.25));
-    // Detection happened at 1.280s; the trimmed 288ms still enters pre-roll.
-    classified(s, 8, 1280000, .9, value: .75);
-    final second = classified(s, 12, 1536000, .1).single;
+    // Detection happened at 2.496s. Only the latest 400ms of real quiet is
+    // retained as pre-roll, after the preceding final's 256ms real tail.
+    classified(s, 8, 2496000, .9, value: .75);
+    final second = classified(
+      s,
+      50,
+      2752000,
+      .1,
+    ).where((c) => c.isFinal).single;
     expect(second.segmentId, isNot(first.segmentId));
-    expect(second.startUs, 880000);
-    expect(second.speechEndUs, 1536000);
-    expect(second.endUs, 1632000);
-    expect(second.samples.take(256), everyElement(.5));
-    expect(second.samples.sublist(256, 6400), everyElement(0));
+    expect(second.startUs, 2096000);
+    expect(second.speechEndUs, 2752000);
+    expect(second.endUs, 3008000);
+    expect(second.startUs, greaterThan(first.endUs));
+    expect(second.samples.take(6400), everyElement(0));
     expect(second.samples.sublist(6400, 10496), everyElement(.75));
   });
 
@@ -422,6 +462,30 @@ void main() {
     expect(result.samples.skip(4096), everyElement(.75));
     expect(s.flush(), isNull);
   });
+
+  test(
+    'explicit neural EOF preserves a low-probability ending and residual',
+    () {
+      final s = AudioSegmenter();
+      expect(classified(s, 8, 0, .9, value: .5), isEmpty);
+      // The detector misses 640ms of real ending audio, longer than either
+      // ordinary tail padding. Explicit stop/pause must still decode all of it.
+      expect(classified(s, 20, 256000, .1, value: .25), isEmpty);
+      final result = s.flush(
+        tail: Float32List.fromList(List.filled(137, .75)),
+        tailTimestampUs: 896000,
+      )!;
+      expect(result.endpointReason, 'eof');
+      expect(result.speechEndUs, 256000);
+      expect(result.startUs, 0);
+      expect(result.endUs, 904562);
+      expect(result.samples.length, 14473);
+      expect(result.samples.take(4096), everyElement(.5));
+      expect(result.samples.sublist(4096, 14336), everyElement(.25));
+      expect(result.samples.skip(14336), everyElement(.75));
+      expect(s.flush(), isNull);
+    },
+  );
 
   test(
     'energy fallback retains classified short speech and pending PCM order',

@@ -1,17 +1,34 @@
 # VAD 断句与末句收尾实验分支
 
-`codex/vad-endpoint-drain` 从 +7 基线 `f0dc1c8` 分出，实验版本 0.1.0+8。已安装 `/Applications/LumaCaption.app` 和原 `dist/` +7 产物保持作为对照；+8 单独输出到 `dist/vad-endpoint/`。
+`codex/vad-endpoint-drain` 基于 +7 macOS 分支，当前修正版为 0.1.0+9。公开 Release v0.1.0 仍提供不含 VAD 的 +7；本分支继续作为实验版本。+9 单独输出到 `dist/vad-guard/`，不覆盖 +7 / +8 产物。
 
 ## 实现
 
 - Silero v5.1.2 GGML（约 865 KiB）随 macOS 实验包提供，固定官方 revision、大小和 SHA256，MIT 许可证随包。Whisper ASR 权重仍由用户按需下载。
 - 独立 CPU VAD worker，单声道 16 kHz，每个新 512 样本窗（32ms）产生概率。`whisper.cpp` v1.8.1 公共 VAD API 每次计算清除循环状态，因此通过最近 1536ms 的对齐音频重放恢复上下文，只消费新增完整窗；这不是原生有状态流式接口。VAD 音频只留在内存。
-- 语音概率 ≥0.5 起句、≥0.35 延续，累计至少 256ms 已判语音；连续 384ms 非语音收句，最终音频截到最后已判语音窗后 96ms。保留实际 400ms 前滚、最长 8s 窗和 500ms 重叠。VAD 决定声音活动边界，不保证语义句子完整。
+- 语音概率 ≥0.5 起句、≥0.35 延续，累计至少 256ms 已判语音；连续 **1600ms** 非语音才确认。一句未确认前，短暂低概率只开始等待，不取消延续状态：较轻的 ≥0.35 续音会清除静音计时。确认后才重新要求 ≥0.5 起句。
+- 普通静音确认保留最后已判语音窗后 **256ms 真实音频**；明确暂停、正常停止、文件 EOF 或采样缺口则保留整段实际已收到的音频和不足 512 样本的余量，避免低概率尾音被截掉，不补零。保留实际 400ms 前滚、最长 8s 窗和 500ms 重叠。
 - 本地离线和文本路线首个预览约 1s，后续基础间隔 500ms，推理过慢时自适应增至最多 3s。最终任务到达时取消同句或更早的在途预览，等待原生调用结束后处理 final；过时的结果和取消错误不进入字幕。
 - 暂停/正常停止先排空已经收到的 VAD FIFO，追加少于 512 样本的真实末尾余量，不补零，再识别和翻译末句；立即停止则废弃旧代次的未完成工作。采样缺口先结束之前的有效语音并重置检测状态。
 - VAD 模型缺失或加载/计算失败时记录诊断并回退原 RMS +600ms 静音断句；Windows 尚未随包提供 VAD 权重，使用回退路径。在线 livetranslate 的云端断句不受这个本地 VAD 控制。
 
-## 静音对照结果（M2 / small / Metal）
+## +9 提前断句修正
+
++8 的 384ms 静音门槛会把句中停顿当成结束；原迟滞逻辑在一次低于 0.35 后退回 0.5 起句门槛，随后的较轻语音可能被继续判为静音。过短片段减少 Whisper 上下文，96ms 尾音裁剪也可能漏掉弱词尾；这些都会影响后续文本翻译。
+
++9 修正上述边界和裁剪，预览仍按最小 500ms 自适应调度。普通确认的静音等待增加 1216ms；暂停/停止/EOF 直接排空，不等待这 1600ms。受控回归覆盖 192/384/800/1152/1408ms 句中停顿、概率跌落后的较轻续音、停止时漏判的尾音，以及预览在停止前保持可修订。
+
+VAD 只估计声音活动，不保证语义句子完整。超过 1600ms 的真实停顿和 8s 窗上限仍会分段；单元测试不代表真实语音准确率。准确率需用同一个模型和同一段音频，与不含 VAD 的路线对照；不能把更早显示某个片段当成识别质量改善。
+
+### +9 静音复验
+
+同一 M2 / small / Metal，在完整公开 11s JFK 样本上进行一轮实际节奏离线对照，真实 EOF 不补零，不调用翻译服务。960ms 初步修正仍把 “Ask not.” 单独确认，因此最终改为 1600ms。当前 VAD 和同构建 RMS 路线均输出 2 段，“Ask not what your country can do for you”保留在同一段；按 22 个英文词比较，均无替换、遗漏和插入。旧 +8 在该样本中输出 4 段，词级 WER 虽为 0，却掩盖了不合适的语义边界。
+
+当前 VAD 首次原文预览 1488ms，RMS 1372ms；最后原文确认相对 EOF 为 391ms / 367ms。一轮数值不作速度结论，未测当前 MT 译文时延，也不代表中文、噪声或影视对白准确率。公开数值见 [修正版摘要](benchmarks/vad-guard-2026-10-07.json)。
+
+## +8 历史静音对照结果（M2 / small / Metal）
+
+以下记录对应旧 +8 的 384ms / 96ms 策略，不代表 +9 修正后的结果。
 
 一轮四种文件各跑两路，均无采样丢弃。以下为音频开始后的首段确认原文，以及最后确认原文相对 EOF 的时间；负数表示在 EOF 前已完成。两路首段的内容长度不同：VAD 先确认较短的“And so, my fellow Americans.”，RMS 等待 8s 大窗，不能解释成同一句完整长句提速。
 
@@ -41,7 +58,7 @@ LUMA_TEST_WAV="$PWD/.tools/whisper.cpp/samples/jfk.wav" \
 .tools/flutter/bin/flutter test test/vad_integration_test.dart --reporter expanded
 ```
 
-配对端点基准使用同一完整公开 JFK PCM，另生成插入 1200ms、200ms 数字静音的完整样本重播，以及原样 11s EOF。生成的 WAV 在 ignored `build/` 中，基准桥只接受文件和 UI 更新，无法播放、采集或读取密钥。两路保持同一个 ASR 模型规格、语言、500ms 预览和实时节奏；对照路为 RMS 600ms +不抢占在途预览，实验路为 Silero 384ms +final 抢占。不是与历史 +7 在线 MT 时间直接配对。
+配对端点基准使用同一完整公开 JFK PCM，另生成插入 1200ms、200ms 数字静音的完整样本重播，以及原样 11s EOF。生成的 WAV 在 ignored `build/` 中，基准桥只接受文件和 UI 更新，无法播放、采集或读取密钥。两路保持同一个 ASR 模型规格、语言、500ms 预览和实时节奏；对照路为 RMS 600ms +不抢占在途预览，当前实验路为 Silero 1600ms +final 抢占。历史 +8 为 384ms。不是与历史 +7 在线 MT 时间直接配对。
 
 ```sh
 LUMA_WHISPER_LIBRARY="$PWD/build/whisper/liblumawhisper.dylib" \
@@ -57,11 +74,11 @@ LUMA_ENDPOINT_BENCHMARK_OUTPUT="$PWD/build/vad-endpoint-small.json" \
 打包命令：
 
 ```sh
-LUMA_OUTPUT_DIRECTORY="$PWD/dist/vad-endpoint" scripts/build_macos.sh
+LUMA_OUTPUT_DIRECTORY="$PWD/dist/vad-guard" scripts/build_macos.sh
 ```
 
 缺少正式签名和公证时仍为 ad-hoc 开发包；本次不替换稳定安装副本、不重做系统采集授权。
 
-## 构建产物
+## +8 历史构建产物
 
 实验 DMG 版本0.1.0+8，源码 `4b96b32`、构建时源码干净；12,139,080字节，SHA256 `f78ba4acf2482d3fa47fcff0f5ba8c2ca65165135cd719613bea4ae9afc72c62`。只读挂载签名验证和包内CPU VAD静音加载/公开fixture检查通过。此次包内首次加载1.509s（含动态库与worker初始化），稳态平均3.76ms/100ms；首次会话准备时间另计。仍为未公证的ad-hoc实验包，不替换已安装+7。

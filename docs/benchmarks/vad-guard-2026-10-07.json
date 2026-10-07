@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0+9",
+  "date": "2026-10-07",
+  "sample": "https://github.com/ggml-org/whisper.cpp/blob/v1.8.1/samples/jfk.wav",
+  "sourceSha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+  "input": "Unmodified public 11s JFK PCM, real EOF without synthetic silence",
+  "playback": false,
+  "capture": false,
+  "network": false,
+  "model": "small",
+  "backend": "Metal / whisper.cpp v1.8.1",
+  "experiment": {
+    "detector": "Silero v5.1.2",
+    "silenceMs": 1600,
+    "preempt": true
+  },
+  "preview": {
+    "firstMs": 1000,
+    "minimumIntervalMs": 500,
+    "adaptive": true
+  },
+  "runs": [
+    {
+      "route": "energy-baseline",
+      "finalSegments": 2,
+      "finalTexts": [
+        "And so my fellow Americans, ask not what your country can do for you.",
+        "Ask what you can do for your country."
+      ],
+      "quality": {
+        "referenceWords": 22,
+        "hypothesisWords": 22,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "errors": 0,
+        "wer": 0.0,
+        "normalization": "Lowercase English words; punctuation ignored",
+        "scope": "Complete public JFK words only; synthetic replays identified"
+      },
+      "firstSourceMs": 1372.238,
+      "firstSourceFinalMs": 8438.193,
+      "lastSourceFinalAfterEofMs": 367.111,
+      "droppedFrames": 0
+    },
+    {
+      "route": "vad-preempt",
+      "finalSegments": 2,
+      "finalTexts": [
+        "And so my fellow Americans, ask not what your country can do for you.",
+        "Ask what you can do for your country."
+      ],
+      "quality": {
+        "referenceWords": 22,
+        "hypothesisWords": 22,
+        "substitutions": 0,
+        "deletions": 0,
+        "insertions": 0,
+        "errors": 0,
+        "wer": 0.0,
+        "normalization": "Lowercase English words; punctuation ignored",
+        "scope": "Complete public JFK words only; synthetic replays identified"
+      },
+      "firstSourceMs": 1488.464,
+      "firstSourceFinalMs": 8404.139,
+      "lastSourceFinalAfterEofMs": 390.993,
+      "droppedFrames": 0
+    }
+  ],
+  "limitations": [
+    "One paired round of one clean English public sample, not a general accuracy estimate",
+    "Offline source transcription only; MT translation was not called",
+    "WER ignores punctuation and semantic sentence boundaries",
+    "1600ms silence waits longer to preserve context; the 8s window cap remains"
+  ]
+}

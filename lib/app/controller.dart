@@ -655,7 +655,9 @@ class AppController extends ChangeNotifier {
         await vad.load(path);
       }
       _useNeuralVad = vad.ready;
-      if (_useNeuralVad) record('本地 Silero VAD · 384ms 静音断句');
+      if (_useNeuralVad) {
+        record('本地 Silero VAD · ${AudioSegmenter.neuralSilenceMs}ms 静音确认');
+      }
     } catch (_) {
       record('VAD 加载失败 · 使用 RMS 断句');
     }

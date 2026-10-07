@@ -179,14 +179,16 @@ class AudioSegmenter {
   int? _startUs;
   int _silence = 0, _id = 0, _revision = 0, _lastPreview = 0;
   bool _speech = false;
-  bool _neuralMode = false, _neuralSpeaking = false;
+  bool _neuralMode = false, _neuralTriggered = false;
   int? _nextNeuralUs, _speechEndUs;
   final List<({int start, int end})> _speechRanges = [];
   static const _neuralWindowSamples = 512;
-  static const _neuralSilenceSamples = 12 * _neuralWindowSamples;
+  static const neuralSilenceMs = 1600;
+  static const _neuralSilenceSamples = neuralSilenceMs * 16;
   static const _minimumSpeechSamples = 4000;
   static const _preRollSamples = 6400;
-  static const _tailPadSamples = 1536;
+  static const _tailPadSamples =
+      4096; // 256ms of real audio after detected speech.
   static const _maxSamples = 128000;
   static const _overlapSamples = 8000;
   void reset() {
@@ -197,7 +199,7 @@ class AudioSegmenter {
     _revision = 0;
     _lastPreview = 0;
     _neuralMode = false;
-    _neuralSpeaking = false;
+    _neuralTriggered = false;
     _nextNeuralUs = null;
     _speechEndUs = null;
     _speechRanges.clear();
@@ -266,7 +268,7 @@ class AudioSegmenter {
   void useEnergyFallback() {
     if (!_neuralMode) return;
     _neuralMode = false;
-    _neuralSpeaking = false;
+    _neuralTriggered = false;
     _nextNeuralUs = null;
     _speechEndUs = null;
     _speechRanges.clear();
@@ -317,7 +319,7 @@ class AudioSegmenter {
     _dropNeuralSamples(math.max(0, _samples.length - _preRollSamples));
     _silence = 0;
     _speech = false;
-    _neuralSpeaking = false;
+    _neuralTriggered = false;
     _speechEndUs = null;
     _speechRanges.clear();
     _revision = 0;
@@ -351,8 +353,12 @@ class AudioSegmenter {
     final offset = _samples.length;
     _samples.addAll(samples);
     _nextNeuralUs = timestampUs + 32000;
-    _neuralSpeaking = speechProbability >= (_neuralSpeaking ? 0.35 : 0.5);
-    if (_neuralSpeaking) {
+    // A short dip starts a pending pause, not a new utterance. Keep the lower
+    // continuation threshold until an endpoint is committed so quieter speech
+    // can resume without having to cross the initial onset threshold again.
+    final speaking = speechProbability >= (_neuralTriggered ? 0.35 : 0.5);
+    if (speaking) {
+      _neuralTriggered = true;
       if (_speechRanges.isNotEmpty && _speechRanges.last.end == offset) {
         _speechRanges[_speechRanges.length - 1] = (
           start: _speechRanges.last.start,
@@ -425,7 +431,10 @@ class AudioSegmenter {
       final c = _neuralSpeechSamples >= _minimumSpeechSamples
           ? _neuralSnapshot(
               true,
-              sampleCount: _trimmedNeuralLength,
+              // At an explicit EOF, pause or stop the classifier may have
+              // missed a soft ending. Preserve all received PCM, including
+              // the unclassified remainder, rather than trimming that ending.
+              sampleCount: _samples.length,
               endpointReason: 'eof',
             )
           : null;

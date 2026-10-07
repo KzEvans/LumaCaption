@@ -159,6 +159,7 @@ class _Harness {
 
 class _HeldVad extends VadDetector {
   Completer<void>? gate;
+  double Function(int sampleOffset)? probabilityAt;
   int resets = 0, processed = 0, calls = 0;
   int? failOnCall;
   int? _consumed;
@@ -194,7 +195,7 @@ class _HeldVad extends VadDetector {
           generation: generation,
           startSample: _consumed!,
           endSample: _consumed! + 512,
-          probability: .9,
+          probability: probabilityAt?.call(_consumed!) ?? .9,
         ),
       );
       _consumed = _consumed! + 512;
@@ -439,6 +440,54 @@ void main() {
       }
     },
   );
+
+  for (final weakContinuation in [true, false]) {
+    test(
+      weakContinuation
+          ? 'sentence pause and weak continuation do not preempt preview before stop'
+          : 'stop preserves ending classified below the continuation threshold',
+      () async {
+        final vad = _HeldVad()
+          ..probabilityAt = (offset) {
+            if (offset < 16384) return .9; // 1024ms clear speech.
+            if (weakContinuation && offset >= 26624) return .4;
+            return .1; // 640ms pause or a soft unclassified ending.
+          };
+        final h = await _Harness.create(detector: vad);
+        try {
+          await h.controller.start();
+          final frames = weakContinuation ? 24 : 16;
+          h.native.frames(frames);
+          await _turn();
+          // The first preview stays in flight while more PCM arrives. Short
+          // VAD dips must not irrevocably finalize it or start another segment.
+          expect(h.whisper.calls, hasLength(1));
+          expect(h.whisper.calls.single.isFinal, false);
+          expect(h.whisper.cancellations, 0);
+          final stopping = h.controller.stop();
+          await _turn();
+          expect(h.whisper.cancellations, 1);
+          h.whisper.calls.first.finish('Obsolete partial sentence.');
+          await _turn();
+          expect(h.whisper.calls, hasLength(2));
+          final finalDecode = h.whisper.calls.last;
+          expect(finalDecode.isFinal, true);
+          expect(finalDecode.samples, frames * 1600);
+          finalDecode.finish('One complete utterance with its ending.');
+          await stopping;
+          expect(h.controller.subtitles.segments, hasLength(1));
+          expect(h.controller.subtitles.segments.single.isFinal, true);
+          expect(
+            h.controller.subtitles.segments.single.original,
+            'One complete utterance with its ending.',
+          );
+          expect(h.controller.error, isEmpty);
+        } finally {
+          await h.close();
+        }
+      },
+    );
+  }
 
   test(
     'emergency stop discards delayed VAD before restarted session',
