@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "startedAtUtc": "2026-10-07T09:56:35.293099+00:00",
+  "appVersion": "0.1.0+6",
+  "library": "installed package native library",
+  "whisperCppVersion": "1.8.1",
+  "nativeAbiVersion": 2,
+  "sample": {
+    "name": "public JFK English sample",
+    "durationMs": 11000.0,
+    "sampleRateHz": 16000,
+    "channels": 1,
+    "samples": 176000,
+    "referenceText": "And so my fellow Americans ask not what your country can do for you ask what you can do for your country",
+    "referenceWords": 22,
+    "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
+  },
+  "method": {
+    "input": "all 11 seconds supplied in each native call, without realtime pacing",
+    "language": "en",
+    "threads": 8,
+    "isFinal": true,
+    "prompt": "",
+    "decoding": "greedy with upstream final temperature fallback",
+    "perModel": "one context load, one separately reported warmup, three repeated warm calls on the same context",
+    "clock": "monotonic perf_counter",
+    "timingScope": "native luma_run duration only; excludes model load, segmentation, stable-prefix waiting, MT, capture and UI",
+    "werNormalization": "lowercase ASCII words, punctuation ignored",
+    "interpretation": "single public sample; warmup includes first-call work; not a realtime pipeline or UI benchmark"
+  },
+  "models": [
+    {
+      "model": "base",
+      "backend": "Metal · whisper.cpp v1.8.1",
+      "loadMs": 195.351,
+      "warmRuns": [
+        {
+          "run": 1,
+          "durationMs": 180.376,
+          "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+          "wer": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "N": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 2,
+          "durationMs": 177.91,
+          "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+          "wer": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "N": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 3,
+          "durationMs": 181.646,
+          "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+          "wer": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "N": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        }
+      ],
+      "warmup": {
+        "run": "warmup",
+        "durationMs": 407.956,
+        "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+        "wer": {
+          "S": 0,
+          "D": 0,
+          "I": 0,
+          "N": 22,
+          "hypothesisWords": 22,
+          "werPercent": 0.0
+        }
+      },
+      "warmSummaryMs": {
+        "n": 3,
+        "median": 180.376,
+        "min": 177.91,
+        "max": 181.646
+      },
+      "finalTextsIdenticalAcrossWarmRuns": true,
+      "weights": {
+        "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+        "format": "ggml",
+        "checksum": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        "bytes": 147951465,
+        "languages": "multilingual"
+      }
+    },
+    {
+      "model": "small",
+      "backend": "Metal · whisper.cpp v1.8.1",
+      "loadMs": 475.526,
+      "warmRuns": [
+        {
+          "run": 1,
+          "durationMs": 452.374,
+          "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+          "wer": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "N": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 2,
+          "durationMs": 452.265,
+          "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+          "wer": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "N": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        },
+        {
+          "run": 3,
+          "durationMs": 478.826,
+          "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+          "wer": {
+            "S": 0,
+            "D": 0,
+            "I": 0,
+            "N": 22,
+            "hypothesisWords": 22,
+            "werPercent": 0.0
+          }
+        }
+      ],
+      "warmup": {
+        "run": "warmup",
+        "durationMs": 594.028,
+        "text": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country.",
+        "wer": {
+          "S": 0,
+          "D": 0,
+          "I": 0,
+          "N": 22,
+          "hypothesisWords": 22,
+          "werPercent": 0.0
+        }
+      },
+      "warmSummaryMs": {
+        "n": 3,
+        "median": 452.374,
+        "min": 452.265,
+        "max": 478.826
+      },
+      "finalTextsIdenticalAcrossWarmRuns": true,
+      "weights": {
+        "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+        "format": "ggml",
+        "checksum": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+        "bytes": 487601967,
+        "languages": "multilingual"
+      }
+    }
+  ],
+  "completedAtUtc": "2026-10-07T09:56:38.918054+00:00",
+  "sourceRevision": "6ca9d6f78c9f91ebf72bcde5dcb296f063f3cb59",
+  "environment": {
+    "platform": "macOS 27.2 beta (26B5101f)",
+    "chip": "Apple M2",
+    "memoryGiB": 16,
+    "architecture": "arm64",
+    "gpuCache": "Previously initialized; these model loads are not first-install cold startup."
+  },
+  "pacedOnlineBenchmark": {
+    "status": "pendingKeychainAuthorization",
+    "scope": "base and small local ASR plus qwen-mt-flash; no new end-to-end results yet",
+    "inputAudioStarted": false,
+    "diagnosis": "Main thread waiting in SecItemCopyMatching; SecurityAgent requires user interaction."
+  }
+}
