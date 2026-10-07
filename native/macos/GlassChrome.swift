@@ -142,8 +142,8 @@ private final class ChromeView: NSView {
             button.imagePosition = .imageLeading; button.imageHugsTitle = false
             button.setAccessibilityLabel(labels[i]); button.toolTip = labels[i]
             button.heightAnchor.constraint(equalToConstant: 40).isActive = true
-            button.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
             navigation.append(button); stack.addArrangedSubview(button)
+            button.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         let space = NSView(); space.setContentHuggingPriority(.defaultLow, for: .vertical); stack.addArrangedSubview(space)
         let footer = NSTextField(labelWithString: "桌面版 0.1.0")
