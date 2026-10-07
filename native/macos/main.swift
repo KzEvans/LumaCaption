@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         backend = FlutterEngine(name: "LumaCaption.backend", project: FlutterDartProject(precompiledDartBundle: nil), allowHeadlessExecution: true)
         bridge = NativeBridge(messenger: backend.binaryMessenger)
         design = WorkbenchController(messenger: backend.binaryMessenger)
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         window.title = "LumaCaption"; window.minSize = NSSize(width: 860, height: 650)
         window.contentViewController = design.root; window.delegate = self; window.isReleasedWhenClosed = false
         design.attach(to: window)
@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         let viewItem = NSMenuItem(); menu.addItem(viewItem); let viewMenu = NSMenu(title: "显示"); viewItem.submenu = viewMenu
         let sidebar = viewMenu.addItem(withTitle: "显示 / 隐藏侧边栏", action: #selector(NSSplitViewController.toggleSidebar(_:)), keyEquivalent: "s"); sidebar.target = design.root; sidebar.keyEquivalentModifierMask = [.command, .control]
+        let fullScreen = viewMenu.addItem(withTitle: "进入 / 退出全屏", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f"); fullScreen.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(.separator())
         for (i, title) in design.titles.enumerated() { let item = viewMenu.addItem(withTitle: title, action: #selector(WorkbenchController.goPage(_:)), keyEquivalent: String(i + 1)); item.tag = i; item.target = design }
         let windowItem = NSMenuItem(); menu.addItem(windowItem); let windows = NSMenu(title: "窗口"); windowItem.submenu = windows

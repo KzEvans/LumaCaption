@@ -2,7 +2,7 @@ import AppKit
 import FlutterMacOS
 
 /// Every visible macOS view belongs to AppKit. The Flutter engine is a backend host.
-final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSToolbarDelegate, NSMenuItemValidation, NSToolbarItemValidation {
+final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuItemValidation {
     let root = NSSplitViewController()
     let pages: [FormPage] = [LivePage(), ModelsPage(), ProvidersPage(), AppearancePage(), HistoryPage(), SettingsPage()]
     let titles = ["实时字幕", "模型管理", "翻译服务", "字幕外观", "历史与导出", "设置与诊断"]
@@ -11,16 +11,13 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
     private let table = NSTableView()
     private let content = NSViewController()
     private let pageHost = NSView()
+    private let sessionBar = SessionBar(frame: .zero)
     private let errorLabel = nativeLabel("", size: 12)
     private var errorBanner: NSStackView!
     private var state: [String: Any] = [:]
-    private var toolbarItems: [NSToolbarItem.Identifier: NSToolbarItem] = [:]
     private(set) var selectedPage = 0
     weak var window: NSWindow?
     private var sidebarItem: NSSplitViewItem!
-    private let startID = NSToolbarItem.Identifier("Luma.start")
-    private let pauseID = NSToolbarItem.Identifier("Luma.pause")
-    private let overlayID = NSToolbarItem.Identifier("Luma.overlay")
 
     init(messenger: FlutterBinaryMessenger) {
         channel = FlutterMethodChannel(name: "lumacaption/design", binaryMessenger: messenger)
@@ -42,16 +39,25 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         table.addTableColumn(NSTableColumn(identifier: .init("page")))
         table.headerView = nil; table.dataSource = self; table.delegate = self; table.style = .sourceList
         table.rowHeight = 40; table.intercellSpacing = NSSize(width: 0, height: 4)
+        table.backgroundColor = .clear
         table.allowsEmptySelection = false
         table.setAccessibilityLabel("LumaCaption 侧边栏")
         scroll.documentView = table
-        let brand = nativeLabel("LumaCaption", size: 16, weight: .semibold)
         let footer = nativeLabel("让理解，跟上声音。", size: 11, secondary: true)
-        let sidebarStack = column([brand, scroll, footer], spacing: 18); pin(sidebarStack, in: sidebar.view, inset: 16)
-        for view in [brand, scroll, footer] { view.widthAnchor.constraint(equalTo: sidebarStack.widthAnchor).isActive = true }
+        let sidebarStack = column([scroll, footer], spacing: 18)
+        sidebar.view.addSubview(sidebarStack); sidebarStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            sidebarStack.topAnchor.constraint(equalTo: sidebar.view.safeAreaLayoutGuide.topAnchor, constant: 16),
+            sidebarStack.leadingAnchor.constraint(equalTo: sidebar.view.leadingAnchor),
+            sidebarStack.trailingAnchor.constraint(equalTo: sidebar.view.trailingAnchor),
+            sidebarStack.bottomAnchor.constraint(equalTo: sidebar.view.bottomAnchor, constant: -20),
+            scroll.widthAnchor.constraint(equalTo: sidebarStack.widthAnchor),
+            footer.leadingAnchor.constraint(equalTo: sidebarStack.leadingAnchor, constant: 20),
+            footer.trailingAnchor.constraint(lessThanOrEqualTo: sidebarStack.trailingAnchor, constant: -20),
+        ])
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
         sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
-        sidebarItem.minimumThickness = 190; sidebarItem.maximumThickness = 270
+        sidebarItem.minimumThickness = 210; sidebarItem.maximumThickness = 270
         sidebarItem.allowsFullHeightLayout = true; sidebarItem.canCollapse = true
         sidebarItem.titlebarSeparatorStyle = .none; root.addSplitViewItem(sidebarItem)
 
@@ -59,7 +65,17 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         errorLabel.textColor = .systemRed
         errorBanner = row([nativeSymbol("exclamationmark.circle"), errorLabel, spacer(), ActionButton("关闭") { [weak self] in self?.send("clearError") }])
         errorBanner.edgeInsets = NSEdgeInsets(top: 12, left: 24, bottom: 4, right: 24)
-        let stack = column([errorBanner, pageHost], spacing: 0); pin(stack, in: content.view)
+        let dock = NSView(); pin(sessionBar, in: dock, inset: 24)
+        let stack = column([errorBanner, pageHost, dock], spacing: 0)
+        content.view.addSubview(stack); stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: content.view.safeAreaLayoutGuide.topAnchor),
+            stack.leadingAnchor.constraint(equalTo: content.view.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: content.view.trailingAnchor),
+            stack.bottomAnchor.constraint(equalTo: content.view.bottomAnchor),
+            dock.widthAnchor.constraint(equalTo: stack.widthAnchor),
+        ])
+        sessionBar.send = { [weak self] action in self?.send(action) }
         errorBanner.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         pageHost.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         pageHost.setContentHuggingPriority(.defaultLow, for: .vertical); errorBanner.isHidden = true
@@ -74,12 +90,11 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
     }
     func attach(to window: NSWindow) {
         self.window = window
-        let toolbar = NSToolbar(identifier: "LumaCaption.toolbar"); toolbar.delegate = self
-        toolbar.displayMode = .iconAndLabel; toolbar.allowsUserCustomization = true; toolbar.autosavesConfiguration = true
-        window.toolbar = toolbar; window.toolbarStyle = .unified
-        window.titleVisibility = .visible
+        window.toolbar = nil
+        window.titleVisibility = .hidden; window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.title = titles[selectedPage]; window.subtitle = "LumaCaption"
+        window.title = titles[selectedPage]; window.subtitle = ""
+        window.isMovableByWindowBackground = true
     }
     func send(_ action: String, _ args: [String: Any] = [:], completion: ((Bool) -> Void)? = nil) {
         if action == "navigate" { navigate(args["page"] as? Int ?? 0); completion?(true); return }
@@ -102,10 +117,11 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         let cell = NSTableCellView()
         let image = nativeSymbol(symbols[index], size: 17); image.contentTintColor = .controlAccentColor
         let label = nativeLabel(titles[index]); label.maximumNumberOfLines = 1
-        let contents = row([image, label], spacing: 10); pin(contents, in: cell, inset: 6)
+        let contents = row([image, label], spacing: 10); pin(contents, in: cell, inset: 8)
         cell.textField = label; cell.imageView = image
         return cell
     }
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? { SidebarRowView() }
     func tableViewSelectionDidChange(_ notification: Notification) { if table.selectedRow >= 0 && table.selectedRow != selectedPage { navigate(table.selectedRow) } }
     private func update(_ value: [String: Any]) {
         let previous = (state["settings"] as? [String: Any])?["theme"] as? String
@@ -114,32 +130,7 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         if previous != theme { window?.appearance = theme == "dark" ? NSAppearance(named: .darkAqua) : theme == "light" ? NSAppearance(named: .aqua) : nil }
         errorLabel.stringValue = value["error"] as? String ?? ""; errorBanner.isHidden = errorLabel.stringValue.isEmpty
         pages[selectedPage].update(value)
-        let running = value["running"] as? Bool == true, paused = value["paused"] as? Bool == true
-        let busy = value["busy"] as? Bool == true || value["loadingModel"] as? Bool == true || value["initialized"] as? Bool != true
-        setToolbar(startID, title: running ? "停止字幕" : "开始字幕", symbol: running ? "stop.fill" : "play.fill", enabled: !busy)
-        setToolbar(pauseID, title: paused ? "继续" : "暂停", symbol: paused ? "play.pause" : "pause", enabled: running && !busy)
-        setToolbar(overlayID, title: value["overlayVisible"] as? Bool == true ? "隐藏悬浮字幕" : "打开悬浮字幕", symbol: "pip", enabled: true)
-    }
-    private func setToolbar(_ id: NSToolbarItem.Identifier, title: String, symbol: String, enabled: Bool) {
-        toolbarItems[id]?.label = title; toolbarItems[id]?.paletteLabel = title; toolbarItems[id]?.toolTip = title
-        toolbarItems[id]?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        toolbarItems[id]?.isEnabled = enabled
-    }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, overlayID, pauseID, startID] }
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, overlayID, pauseID, startID] }
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        if id == .toggleSidebar {
-            let item = NSToolbarItem(itemIdentifier: id); item.label = "侧边栏"; item.image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "显示或隐藏侧边栏")
-            item.target = root; item.action = #selector(NSSplitViewController.toggleSidebar(_:)); return item
-        }
-        if id == .sidebarTrackingSeparator { return NSTrackingSeparatorToolbarItem(identifier: id, splitView: root.splitView, dividerIndex: 0) }
-        guard [overlayID, pauseID, startID].contains(id) else { return nil }
-        let item = NSToolbarItem(itemIdentifier: id); item.target = self; item.isBordered = true
-        item.action = id == startID ? #selector(toggleStart) : id == pauseID ? #selector(pause) : #selector(toggleOverlay)
-        item.label = id == startID ? "开始字幕" : id == pauseID ? "暂停" : "打开悬浮字幕"
-        item.image = NSImage(systemSymbolName: id == startID ? "play.fill" : id == pauseID ? "pause" : "pip", accessibilityDescription: item.label)
-        if #available(macOS 26.0, *), id == startID { item.style = .prominent }
-        toolbarItems[id] = item; return item
+        sessionBar.update(value)
     }
     @objc func toggleStart() { send("toggleStart") }
     @objc func pause() { send("pause") }
@@ -163,22 +154,19 @@ final class WorkbenchController: NSObject, NSTableViewDataSource, NSTableViewDel
         if menuItem.action == #selector(goPage(_:)) { menuItem.state = menuItem.tag == selectedPage ? .on : .off }
         return true
     }
-    func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
-        let busy = state["busy"] as? Bool == true || state["loadingModel"] as? Bool == true
-        if item.itemIdentifier == startID { return !busy && state["initialized"] as? Bool == true }
-        if item.itemIdentifier == pauseID { return state["running"] as? Bool == true && !busy }
-        return true
-    }
     func status() -> [String: Any] {
         func controls(_ view: NSView) -> [String] {
             (view is NSControl || view is NSTextView ? [String(describing: type(of: view))] : []) + view.subviews.flatMap(controls)
         }
         return [
-            "renderer": "AppKit", "page": selectedPage, "toolbar": "NSToolbar", "sidebar": "NSSplitViewController",
+            "renderer": "AppKit", "page": selectedPage, "toolbar": "none", "sidebar": "NSSplitViewController",
+            "fullSizeContentView": window?.styleMask.contains(.fullSizeContentView) == true,
+            "titlebarTransparent": window?.titlebarAppearsTransparent == true,
+            "cornerRadius": MacUI.cornerRadius, "sessionControls": controls(sessionBar),
             "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
             "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
             "pages": pages.enumerated().map { ["title": titles[$0.offset], "controls": controls($0.element.view)] as [String: Any] },
-            "liveMaterial": (pages[0] as! LivePage).glass.materialName,
+            "liveMaterial": sessionBar.glass.materialName,
             "width": root.view.bounds.width, "height": root.view.bounds.height,
         ]
     }

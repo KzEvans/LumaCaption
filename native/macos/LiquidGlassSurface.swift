@@ -21,16 +21,17 @@ final class LiquidGlassSurface: NSView {
         let background: NSView
         if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
             let solid = NSView(); solid.wantsLayer = true
-            solid.layer?.cornerRadius = 16
+            solid.layer?.cornerRadius = MacUI.cornerRadius
             background = solid
         } else if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
-            glass.style = .regular; glass.cornerRadius = 16
+            glass.style = .regular; glass.cornerRadius = MacUI.cornerRadius
             background = glass
         } else {
             let visual = NSVisualEffectView()
             visual.material = .hudWindow; visual.blendingMode = .behindWindow; visual.state = .followsWindowActiveState
-            visual.wantsLayer = true; visual.layer?.cornerRadius = 16
+            visual.wantsLayer = true; visual.layer?.cornerRadius = MacUI.cornerRadius
+            visual.layer?.masksToBounds = true
             background = visual
         }
         effect = background; addSubview(background, positioned: .below, relativeTo: content.superview == self ? content : nil)

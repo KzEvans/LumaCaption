@@ -2,7 +2,7 @@
 
 macOS/Windows 实时字幕应用，共享 Dart 识别、翻译与存储逻辑。macOS 界面由 AppKit 完整承载，Windows 界面使用 Flutter。当前 0.1.0 为开发测试版；平台验收状态见 [docs/testing.md](docs/testing.md)，协议与能力边界见 [docs/feasibility.md](docs/feasibility.md)。产品完整要求保存在 [docs/product-spec.zh.md](docs/product-spec.zh.md)。
 
-当前分支 `codex/mac-liquid-glass` 的六个主页面、工具栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
+当前分支 `codex/mac-liquid-glass` 的六个主页面、底部会话控制栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。全高度边栏包含系统窗口按钮，布局参考 Apple Music。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
 
 ## 使用
 

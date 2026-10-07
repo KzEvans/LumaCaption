@@ -6,15 +6,8 @@ let languages = [("zh", "中文"), ("en", "英语"), ("ja", "日语"), ("ko", "�
 
 final class LivePage: FormPage {
     let transcript = TranscriptView()
-    let glass = LiquidGlassSurface(frame: .zero)
-    private let privacy = nativeLabel("正在初始化", size: 11, secondary: true)
-    private let statusLabel = nativeLabel("准备就绪", size: 12, weight: .medium)
-    private let metrics = nativeLabel("", size: 11, secondary: true)
-    private let meter = NSLevelIndicator()
     private var deviceSignature = ""
     private var device: ChoiceControl!
-    private var pause: ActionButton!
-    private var emergency: ActionButton!
     override func loadView() {
         view = NSView()
         let mode = choice("mode", choices: workModes)
@@ -22,24 +15,17 @@ final class LivePage: FormPage {
         source.changed = { [weak self] value in self?.send("configure", ["patch": ["source": value, "deviceId": ""]]) }
         device = choice("deviceId", choices: [("", "默认设备")])
         let sourceRow = row([nativeLabel("声音来源", secondary: true), source, device, spacer()])
-        let modeRow = row([nativeLabel("工作模式", secondary: true), mode, spacer()])
+        let settingsButton = ActionButton("配置", symbol: "slider.horizontal.3") { [weak self] in self?.send("navigate", ["page": 2]) }
+        let modeRow = row([nativeLabel("工作模式", secondary: true), mode, spacer(), settingsButton])
         let inputs = column([sourceRow, modeRow], spacing: 10)
         sourceRow.widthAnchor.constraint(equalTo: inputs.widthAnchor).isActive = true
         modeRow.widthAnchor.constraint(equalTo: inputs.widthAnchor).isActive = true
         source.setAccessibilityLabel("声音来源"); device.setAccessibilityLabel("输入设备"); mode.setAccessibilityLabel("工作模式")
-        let settingsButton = ActionButton("配置", symbol: "slider.horizontal.3") { [weak self] in self?.send("navigate", ["page": 2]) }
-        pause = ActionButton("暂停", symbol: "pause.fill") { [weak self] in self?.send("pause", [:]) }
-        emergency = ActionButton("立即停止", symbol: "stop.circle") { [weak self] in self?.send("emergency", [:]) }
-        emergency.toolTip = "立即停止采集并丢弃待处理音频"
-        meter.levelIndicatorStyle = .continuousCapacity; meter.minValue = 0; meter.maxValue = 1
-        meter.setAccessibilityLabel("输入音量"); meter.widthAnchor.constraint(equalToConstant: 86).isActive = true
-        let controls = row([nativeSymbol("waveform"), statusLabel, meter, spacer(), settingsButton, pause, emergency])
-        pin(controls, in: glass.content, inset: 12)
-        let footer = row([nativeSymbol("lock.shield", size: 13), privacy, spacer(), metrics], spacing: 6)
-        let body = column([inputs, transcript, glass, footer], spacing: 16)
+        let title = nativeLabel("实时字幕", size: MacUI.headingSize, weight: .semibold)
+        let body = column([title, inputs, transcript], spacing: 20)
         pin(body, in: view, inset: 24)
-        for item in [inputs, transcript, glass, footer] { item.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
-        transcript.heightAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        for item in [title, inputs, transcript] { item.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
+        transcript.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         transcript.setContentHuggingPriority(.defaultLow, for: .vertical)
     }
     override func update(_ value: [String: Any]) {
@@ -55,14 +41,6 @@ final class LivePage: FormPage {
         device.selectValue(settings["deviceId"] as? String ?? "")
         let locked = value["running"] as? Bool == true || value["busy"] as? Bool == true
         for control in controls.values { control.isEnabled = !locked }
-        pause.isEnabled = value["running"] as? Bool == true && value["busy"] as? Bool != true
-        pause.title = value["paused"] as? Bool == true ? "继续" : "暂停"; pause.setAccessibilityLabel(pause.title)
-        emergency.isEnabled = locked
-        statusLabel.stringValue = value["status"] as? String ?? ""
-        privacy.stringValue = value["privacy"] as? String ?? ""
-        meter.doubleValue = min(1, (value["level"] as? Double ?? 0) * 6)
-        let rtf = value["rtf"] as? Double ?? 0
-        metrics.stringValue = rtf > 0 ? String(format: "RTF %.2f · %@", rtf, value["selectedModel"] as? String ?? "") : "模型：\(value["selectedModel"] as? String ?? "尚未选择")"
         let generation = value["generation"] as? Int ?? 0
         let segments = (value["segments"] as? [[String: Any]] ?? []).filter { $0["generation"] as? Int == generation }
         transcript.update(segments, display: settings["display"] as? String ?? "bilingual", autoscroll: true)
@@ -114,7 +92,7 @@ final class ModelsPage: FormPage {
                     alert.beginSheetModal(for: window) { response in if response == .alertFirstButtonReturn { self.send("removeModel", ["id": id]) } }
                 }
                 let content = row([nativeSymbol("cpu", size: 24), text, spacer(), use, remove])
-                let box = NSBox(); box.boxType = .custom; box.borderWidth = 0; box.fillColor = .controlBackgroundColor; box.cornerRadius = 12; box.contentViewMargins = .zero
+                let box = NSBox(); box.boxType = .custom; box.borderWidth = 0; box.fillColor = .controlBackgroundColor; box.cornerRadius = MacUI.cornerRadius; box.contentViewMargins = .zero
                 pin(content, in: box.contentView!, inset: 16)
                 modelRows.addArrangedSubview(box); box.widthAnchor.constraint(equalTo: modelRows.widthAnchor).isActive = true
                 entries[id] = (description, use, remove)
@@ -324,9 +302,10 @@ final class HistoryPage: FormPage, NSSearchFieldDelegate {
         }
         let footer = row([persist, nativeLabel("保存字幕历史到本机", size: 12), spacer(), clear])
         let note = nativeLabel("仅导出已确认字幕。SRT / VTT 需要单个会话及有效时间；搜索只筛选阅读区。", size: 11, secondary: true)
-        let body = column([filter, transcript, footer, note], spacing: 16); pin(body, in: view, inset: 24)
-        for item in [filter, transcript, footer, note] { item.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
-        transcript.heightAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
+        let title = nativeLabel("历史与导出", size: MacUI.headingSize, weight: .semibold)
+        let body = column([title, filter, transcript, footer, note], spacing: 16); pin(body, in: view, inset: 24)
+        for item in [title, filter, transcript, footer, note] { item.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
+        transcript.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
         transcript.setContentHuggingPriority(.defaultLow, for: .vertical)
     }
     func controlTextDidChange(_ obj: Notification) { refreshText() }

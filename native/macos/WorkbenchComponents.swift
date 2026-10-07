@@ -1,5 +1,18 @@
 import AppKit
 
+enum MacUI {
+    // App-owned surfaces share a restrained rounded rectangle. Window controls
+    // and standard switches, menus and fields keep their system geometry.
+    static let cornerRadius: CGFloat = 10
+    static let headingSize: CGFloat = 28
+    static func textColor(on fill: NSColor) -> NSColor {
+        guard let rgb = fill.usingColorSpace(.sRGB) else { return .controlTextColor }
+        func linear(_ value: CGFloat) -> CGFloat { value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4) }
+        let luminance = 0.2126 * linear(rgb.redComponent) + 0.7152 * linear(rgb.greenComponent) + 0.0722 * linear(rgb.blueComponent)
+        return luminance > 0.179 ? .black : .white
+    }
+}
+
 func nativeLabel(_ text: String, size: CGFloat = 13, weight: NSFont.Weight = .regular, secondary: Bool = false) -> NSTextField {
     let label = NSTextField(wrappingLabelWithString: text)
     label.font = .systemFont(ofSize: size, weight: weight)
@@ -34,11 +47,35 @@ func pin(_ child: NSView, in parent: NSView, inset: CGFloat = 0) {
         child.bottomAnchor.constraint(equalTo: parent.bottomAnchor, constant: -inset),
     ])
 }
+private final class RoundedActionCell: NSButtonCell {
+    override func drawBezel(withFrame frame: NSRect, in controlView: NSView) {
+        let rect = frame.insetBy(dx: 1, dy: 1)
+        let shape = NSBezierPath(roundedRect: rect, xRadius: MacUI.cornerRadius, yRadius: MacUI.cornerRadius)
+        let accent = (controlView as? NSButton)?.bezelColor
+        let fill = accent ?? .controlBackgroundColor
+        (isEnabled ? fill : fill.withAlphaComponent(0.45)).setFill(); shape.fill()
+        if isHighlighted { NSColor.labelColor.withAlphaComponent(0.12).setFill(); shape.fill() }
+        if accent == nil { NSColor.separatorColor.setStroke(); shape.lineWidth = 0.5; shape.stroke() }
+    }
+    override func drawTitle(_ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView) -> NSRect {
+        let styled = NSMutableAttributedString(attributedString: title)
+        let foreground = (controlView as? NSButton)?.bezelColor.map(MacUI.textColor(on:)) ?? .controlTextColor
+        styled.addAttribute(.foregroundColor, value: isEnabled ? foreground : NSColor.disabledControlTextColor, range: NSRange(location: 0, length: styled.length))
+        return super.drawTitle(styled, withFrame: frame, in: controlView)
+    }
+    override func drawFocusRingMask(withFrame frame: NSRect, in controlView: NSView) {
+        NSBezierPath(roundedRect: frame.insetBy(dx: 1, dy: 1), xRadius: MacUI.cornerRadius, yRadius: MacUI.cornerRadius).fill()
+    }
+}
+
 final class ActionButton: NSButton {
     var perform: (() -> Void)?
     init(_ title: String, symbol: String? = nil, perform: @escaping () -> Void) {
-        super.init(frame: .zero); self.title = title; self.perform = perform
-        bezelStyle = .rounded; target = self; action = #selector(pressed)
+        super.init(frame: .zero); cell = RoundedActionCell(textCell: title)
+        self.title = title; self.perform = perform
+        bezelStyle = .rounded; controlSize = .large; font = .systemFont(ofSize: 13)
+        setButtonType(.momentaryPushIn); target = self; action = #selector(pressed)
+        heightAnchor.constraint(equalToConstant: 34).isActive = true
         if let symbol { image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil); imagePosition = .imageLeading }
         setAccessibilityLabel(title)
     }
@@ -164,7 +201,7 @@ class FormPage: NSViewController {
         ])
     }
     func heading(_ title: String, detail: String) {
-        let content = column([nativeLabel(title, size: 24, weight: .semibold), nativeLabel(detail, secondary: true)], spacing: 8)
+        let content = column([nativeLabel(title, size: MacUI.headingSize, weight: .semibold), nativeLabel(detail, secondary: true)], spacing: 8)
         add(content)
     }
     func add(_ content: NSView) {
@@ -174,7 +211,7 @@ class FormPage: NSViewController {
         let body = column(spacing: 10)
         body.addArrangedSubview(nativeLabel(title, size: 13, weight: .semibold))
         let box = NSBox(); box.boxType = .custom; box.borderWidth = 0
-        box.fillColor = .controlBackgroundColor; box.cornerRadius = 12; box.contentViewMargins = .zero
+        box.fillColor = .controlBackgroundColor; box.cornerRadius = MacUI.cornerRadius; box.contentViewMargins = .zero
         let fields = column(spacing: 12)
         for (index, pair) in rows.enumerated() {
             if index > 0 {
