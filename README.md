@@ -4,7 +4,7 @@
 
 LumaCaption 是一款桌面实时字幕应用：采集系统声音或麦克风，生成原文与译文，并在独立悬浮窗中显示。当前 macOS 版本使用原生 AppKit 界面，共享识别、翻译与存储逻辑由 Dart 承载。
 
-[下载 macOS 开发测试版](https://github.com/KiritoSkyWalker/LumaCaption/releases/tag/v0.1.0) · [更新记录](CHANGELOG.md) · [发布版验收记录](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md) · [第三方许可证](docs/THIRD_PARTY_NOTICES.md)
+[下载 macOS 开发测试版](https://github.com/KzEvans/LumaCaption/releases/tag/v0.1.0) · [更新记录](CHANGELOG.md) · [发布版验收记录](https://github.com/KzEvans/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md) · [第三方许可证](docs/THIRD_PARTY_NOTICES.md)
 
 ## 当前 Release
 
@@ -28,7 +28,7 @@ LumaCaption 是一款桌面实时字幕应用：采集系统声音或麦克风�
 
 ## 安装与开始使用
 
-1. 从 [v0.1.0 Release](https://github.com/KiritoSkyWalker/LumaCaption/releases/tag/v0.1.0) 下载 `LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，将 `LumaCaption.app` 拖入「应用程序」，再启动。Release 同时提供 SHA256 校验文件与构建清单。
+1. 从 [v0.1.0 Release](https://github.com/KzEvans/LumaCaption/releases/tag/v0.1.0) 下载 `LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，将 `LumaCaption.app` 拖入「应用程序」，再启动。Release 同时提供 SHA256 校验文件与构建清单。
 2. 在「模型管理」下载或导入模型，点击「使用」加载。首次启动不会自动下载模型。离线模式和本地识别 + 文本翻译模式需要本地模型。
 3. 在「实时字幕」选择声音来源和工作模式。首次试用可先选择「离线原文字幕」。
 4. 如需翻译，在「翻译服务」填写对应配置：实时模式需匹配密钥的地域、Workspace ID 和模型 ID，Endpoint 留空可使用地域模板；文本模式需填写 Base URL、模型 ID 和 API Key。保存后再开始字幕。在线使用由服务商计费。
@@ -59,7 +59,7 @@ LumaCaption 是一款桌面实时字幕应用：采集系统声音或麦克风�
 | 音频开始 → 首个确认译文 | 8.516 秒 | 8.714 秒 |
 | 音频结束 → 最后确认译文 | 0.586 秒 | 1.013 秒 |
 
-模型准备和钥匙串授权等待另计；以上只覆盖一个干净短样本，不代表复杂环境的准确率、逐词延迟或点击开始后的总等待。完整测量口径、范围与离群值见 [500 ms 对照报告](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/whisper-500ms-benchmark.md)。Qwen 3.8 与本地 Whisper + MT 两条路线均有静音在线联调记录，其他 OpenAI-compatible 服务尚未完成真实联调。
+模型准备和钥匙串授权等待另计；以上只覆盖一个干净短样本，不代表复杂环境的准确率、逐词延迟或点击开始后的总等待。完整测量口径、范围与离群值见 [500 ms 对照报告](https://github.com/KzEvans/LumaCaption/blob/codex/mac-liquid-glass/docs/whisper-500ms-benchmark.md)。Qwen 3.8 与本地 Whisper + MT 两条路线均有静音在线联调记录，其他 OpenAI-compatible 服务尚未完成真实联调。
 
 macOS 已验证真实模型推理、系统声音采集路径和悬浮窗原生属性。麦克风真实录音、悬浮窗完整手工交互、多屏与全屏场景仍需验收。tiny 模型可能漏词或误识别。Windows AI Speech SDK、MSIX、Windows 实机与安装包、完整英文界面及部分高级翻译配置仍待开发或验证。
 
@@ -67,10 +67,10 @@ macOS 已验证真实模型推理、系统声音采集路径和悬浮窗原生�
 
 | 分支 | 用途 |
 | --- | --- |
-| [`main`](https://github.com/KiritoSkyWalker/LumaCaption/tree/main) | 早期共享基线 0.1.0+1：Flutter 内容界面、原生采集与悬浮字幕、CPU Whisper、Qwen 3.5 / 文本翻译适配器；不是当前 Release 来源 |
-| [`codex/mac-liquid-glass`](https://github.com/KiritoSkyWalker/LumaCaption/tree/codex/mac-liquid-glass) | 当前 macOS Release 0.1.0+7：原生 AppKit / Liquid Glass、Qwen 3.8、Metal Whisper、稳定前缀与 500 ms 预览、后台暖机 |
-| [`codex/windows-material3`](https://github.com/KiritoSkyWalker/LumaCaption/tree/codex/windows-material3) | Windows Material 3 界面方向；尚待 Windows 编译与设备验收 |
-| [`codex/vad-endpoint-drain`](https://github.com/KiritoSkyWalker/LumaCaption/tree/codex/vad-endpoint-drain) | 基于 macOS 优化版的断句与收尾实验：Silero VAD、过时预览取消、末句排空；未纳入当前 Release |
+| [`main`](https://github.com/KzEvans/LumaCaption/tree/main) | 早期共享基线 0.1.0+1：Flutter 内容界面、原生采集与悬浮字幕、CPU Whisper、Qwen 3.5 / 文本翻译适配器；不是当前 Release 来源 |
+| [`codex/mac-liquid-glass`](https://github.com/KzEvans/LumaCaption/tree/codex/mac-liquid-glass) | 当前 macOS Release 0.1.0+7：原生 AppKit / Liquid Glass、Qwen 3.8、Metal Whisper、稳定前缀与 500 ms 预览、后台暖机 |
+| [`codex/windows-material3`](https://github.com/KzEvans/LumaCaption/tree/codex/windows-material3) | Windows Material 3 界面方向；尚待 Windows 编译与设备验收 |
+| [`codex/vad-endpoint-drain`](https://github.com/KzEvans/LumaCaption/tree/codex/vad-endpoint-drain) | 基于 macOS 优化版的断句与收尾实验：Silero VAD、过时预览取消、末句排空；未纳入当前 Release |
 
 VAD 判断语音活动与停顿，不保证语义上的完整句子。实验分支的结果应按该分支文档理解。
 
@@ -79,7 +79,7 @@ VAD 判断语音活动与停顿，不保证语义上的完整句子。实验分�
 当前 macOS Release 的源码位于 `codex/mac-liquid-glass`：
 
 ```sh
-git clone https://github.com/KiritoSkyWalker/LumaCaption.git
+git clone https://github.com/KzEvans/LumaCaption.git
 cd LumaCaption
 git switch codex/mac-liquid-glass
 ```
@@ -130,4 +130,4 @@ flutter test test/whisper_integration_test.dart --reporter expanded
 
 这项测试预期输入上游 `samples/jfk.wav` 中的英文样本。音频样本和模型权重不在本仓库或默认安装包中分发。在「设置与诊断」也可选择自己有权处理的 WAV，使用离线模式静默验证转写。
 
-反馈问题时请注明分支、应用版本、系统版本、工作模式及脱敏后的复现步骤。发布版详细边界见 [验收记录](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md)。第三方组件与模型的许可证见 [THIRD_PARTY_NOTICES](docs/THIRD_PARTY_NOTICES.md)。
+反馈问题时请注明分支、应用版本、系统版本、工作模式及脱敏后的复现步骤。发布版详细边界见 [验收记录](https://github.com/KzEvans/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md)。第三方组件与模型的许可证见 [THIRD_PARTY_NOTICES](docs/THIRD_PARTY_NOTICES.md)。
