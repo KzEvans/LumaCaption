@@ -2,7 +2,23 @@
 
 更新：2026-10-07。这里区分源码实现、模拟协议测试、真实模型运行和设备验收。
 
-## 界面分支验收（2026-10-07）
+## 完整 AppKit 重构验收（2026-10-07）
+
+`codex/mac-liquid-glass` 的 `d41f113` 将六个可见页面全部改为 AppKit，使用原生 NSSplitViewController、NSToolbar、表单、NSTextView、NSAlert 与文件 Sheet。Flutter Engine 无视图运行，只承载共享业务；旧的 chrome 协调器已移除。
+
+最终 Dart 分析无问题，**31 项测试通过，1 项可选 FFI 跳过**。新增验证配置修改保留其它路径和设置、捕获期间锁定输入与服务、拒绝未知配置/操作、界面状态不包含 PCM/凭据、测试模式清空临时字幕不删除已保存历史。保留的 Flutter 明暗/缩放组件测试只代表备用界面回归；原生 UI 使用运行包另行检查。
+
+实际 GUI 验证六页原生辅助功能内容与 ⌘1–6 切换、深浅外观、系统焦点环、草稿跨页保留与保存回调；模型选择为 NSOpenPanel Sheet。历史搜索 `fellow` 只显示对应段；NSSavePanel 将两条确认字幕写入 build/mac-native-ui-export.txt，与完整识别输出相符。清空确认选择取消后字幕保持。旧版 Flutter 内容区 AXTree 更新错误在完整原生页面切换中不再复现；未开启 VoiceOver 朗读或修改系统权限。
+
+静默真实 Whisper tiny WAV 验收使用原生 AppKit 文本区与 NSPanel，不播放、不采集麦克风、不联网翻译。首轮 build/mac-native-runtime.json：110 帧、11 秒、2 条 final、0 丢弃，结束后 running=false；最后 3.5 秒窗口推理 1437 ms、RTF 0.411。它验证端到端识别与界面状态，不能代替采集设备或准确率验收。
+
+最终包 `dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`：9,393,471 字节，SHA256 `a3bedc4b345edf24bc2712e1951c490e52e5aaff17812e929bd97c2c0e03ce1b`。清单记录源码 d41f113、构建时无未提交源码；ad-hoc 签名、未公证。先前安装副本未覆盖。
+
+最终包复验 build/mac-native-final.json：status=ok，同样收到 110 帧、11 秒、2 条 final，停止后原生 running=false；最后 3.5 秒窗口推理 656 ms、RTF 0.188。界面返回 renderer=AppKit、NSToolbar、NSSplitViewController，控制条与悬浮窗均为 NSGlassEffectView。穿透开关和原生恢复入口的属性检查通过；悬浮窗 canBecomeKey=false。GUI 又检查六页切换、离线服务页、暂停按钮禁用、⌘F 原生查找栏、⌘L 隐藏悬浮窗；原生系统控件及 Sheet 采用中文本地化。运行日志没有 AXTree 或约束错误。
+
+完整 VoiceOver、减少透明度开关、旧版系统回退、多屏及全屏覆盖未实机验收；麦克风及在线 API 继续保持此前边界。
+
+## 早期导航重构记录（2026-10-07，已被完整重构替代）
 
 Git 基线保留在 main；codex/mac-liquid-glass 与 codex/windows-material3 从同一基线分别开发。两分支的 Dart 分析均无问题，测试各为 **26 项通过，1 项可选 FFI 跳过**，新增覆盖明暗配色、125% 文字缩放和最小桌面布局。Windows Material 3 的 NavigationRail 在宽窄窗口切换展开状态；Windows 原生安装产物仍未构建。
 
