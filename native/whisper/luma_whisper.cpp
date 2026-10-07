@@ -2,6 +2,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <string>
 #include <new>
 #ifdef _WIN32
@@ -84,4 +85,56 @@ API void luma_cancel(void* handle) { if(handle) static_cast<Engine*>(handle)->ca
 API void luma_destroy(void* handle) { auto* e=static_cast<Engine*>(handle); if(e){whisper_free(e->ctx);delete e;} }
 API const char* luma_backend(void* handle) {
   return handle ? static_cast<Engine*>(handle)->backend.c_str() : "Whisper · 未加载";
+}
+
+// Independent CPU VAD contexts are owned by the VAD worker. The Whisper ABI
+// above remains unchanged. Calls accept complete 32ms windows only: padding a
+// partial live frame with zeros could manufacture an early speech endpoint.
+struct VadEngine {
+  whisper_vad_context* ctx = nullptr;
+};
+API int luma_vad_version() { return 1; }
+API void* luma_vad_create(const char* path, int threads) {
+  if (!path || !path[0]) return nullptr;
+  whisper_log_set(quiet_log, nullptr);
+  auto* engine = new(std::nothrow) VadEngine();
+  if (!engine) return nullptr;
+  auto params = whisper_vad_default_context_params();
+  params.use_gpu = false;
+  params.n_threads = std::max(1, std::min(threads, 4));
+  try {
+    engine->ctx = whisper_vad_init_from_file_with_params(path, params);
+  } catch (...) {
+    if (engine->ctx) whisper_vad_free(engine->ctx);
+    delete engine;
+    return nullptr;
+  }
+  if (!engine->ctx) { delete engine; return nullptr; }
+  return engine;
+}
+API int luma_vad_run_probs(void* handle, const float* samples, int count,
+                           float* output, int capacity) {
+  auto* engine = static_cast<VadEngine*>(handle);
+  if (!engine || !samples || !output || count <= 0 || count % 512 != 0 ||
+      count > 16000 * 2 || capacity < count / 512) return -1;
+  try {
+    if (!whisper_vad_detect_speech(engine->ctx, samples, count)) return -2;
+    const int n = whisper_vad_n_probs(engine->ctx);
+    if (n != count / 512 || n > capacity) return -3;
+    const float* probs = whisper_vad_probs(engine->ctx);
+    for (int i = 0; i < n; ++i) {
+      if (!std::isfinite(probs[i]) || probs[i] < 0 || probs[i] > 1) return -4;
+      output[i] = probs[i];
+    }
+    return n;
+  } catch (...) {
+    return -5;
+  }
+}
+API void luma_vad_free(void* handle) {
+  auto* engine = static_cast<VadEngine*>(handle);
+  if (engine) {
+    whisper_vad_free(engine->ctx);
+    delete engine;
+  }
 }

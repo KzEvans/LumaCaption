@@ -23,6 +23,10 @@ void main(List<String> args) {
   final onlineTest = option('test-online') == 'true';
   final pacedTest = option('test-paced') == 'true';
   controller.testMode = wav != null || source != null;
+  if (controller.testMode) {
+    controller.enableNeuralVad = option('test-segmentation') != 'energy';
+    controller.preemptFinalPreviews = option('test-final-priority') != 'false';
+  }
   if (Platform.isMacOS) {
     MacWorkbenchCoordinator(controller);
     unawaited(controller.initialize());
@@ -128,6 +132,8 @@ void main(List<String> args) {
           if (controller.sessionTiming != null)
             'timing': controller.sessionTiming!.report(),
           'backend': controller.whisper.backend,
+          'vadBackend': controller.vadBackend,
+          'finalPreviewPreemption': controller.preemptFinalPreviews,
           'rtf': controller.rtf,
           'inferenceMs': controller.finalLatencyMs,
           'receivedFrames': controller.receivedFrames,

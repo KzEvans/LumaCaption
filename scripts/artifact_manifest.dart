@@ -11,6 +11,31 @@ Future<void> main(List<String> args) async {
   }
   final file = File(args[0]);
   final platform = args[1];
+  Map<String, dynamic>? vadModel;
+  if (platform == 'macos' && args.length > 3) {
+    final vadDirectory = p.join(args[3], 'Contents', 'Resources', 'vad');
+    final metadataFile = File(p.join(vadDirectory, 'manifest.json'));
+    if (await metadataFile.exists()) {
+      final metadata =
+          jsonDecode(await metadataFile.readAsString()) as Map<String, dynamic>;
+      final weights = File(p.join(vadDirectory, metadata['file'] as String));
+      final weightsDigest = await sha256.bind(weights.openRead()).first;
+      if (await weights.length() != metadata['bytes'] ||
+          weightsDigest.toString() != metadata['sha256']) {
+        throw StateError('Bundled VAD model failed size/SHA256 verification');
+      }
+      vadModel = {
+        'bundled': true,
+        'modelId': metadata['modelId'],
+        'revision': metadata['revision'],
+        'bytes': metadata['bytes'],
+        'sha256': metadata['sha256'],
+        'license': metadata['license'],
+        'source': metadata['source'],
+        'resourcePath': 'Contents/Resources/vad/${metadata['file']}',
+      };
+    }
+  }
   final signature = <String, dynamic>{
     'status': 'unsigned',
     'notarization': platform == 'macos'
@@ -69,6 +94,8 @@ Future<void> main(List<String> args) async {
       if (platform == 'macos') 'metalKernels': 'embeddedSourceInNativeLibrary',
       'whisperAbiVersion': 2,
       'modelWeightsBundled': false,
+      'modelWeightsBundledScope': 'Whisper ASR',
+      'vadModel': ?vadModel,
       'platformAcceptance':
           'See docs/testing.md; a build does not prove capture acceptance',
     }),

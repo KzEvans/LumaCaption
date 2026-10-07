@@ -205,6 +205,8 @@ class SessionTiming {
     required int audioEndUs,
     required int previewIntervalUs,
     int? inferenceUs,
+    String? endpointReason,
+    int? speechEndUs,
   }) {
     if (generation != this.generation || _stoppedUs != null) return;
     _requireAudio();
@@ -221,6 +223,23 @@ class SessionTiming {
       'audioSnapshotEndMs': _ms(audioEndUs),
       'previewIntervalMs': _ms(previewIntervalUs),
       if (inferenceUs != null) 'inferenceMs': _ms(inferenceUs),
+      'endpointReason': ?endpointReason,
+      if (speechEndUs != null) 'speechEndMs': _ms(speechEndUs),
+    });
+  }
+
+  void vadProcessed({
+    required int generation,
+    required int samples,
+    required int windows,
+    required int elapsedUs,
+  }) {
+    if (generation != this.generation || _stoppedUs != null) return;
+    _requireAudio();
+    _record('vadProcessed', _now(), {
+      'samples': samples,
+      'windows': windows,
+      'processingMs': _ms(elapsedUs),
     });
   }
 

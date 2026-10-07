@@ -127,14 +127,18 @@ class AudioChunk {
     this.segmentId = 0,
     this.revision = 1,
     this.isFinal = true,
+    this.endpointReason,
+    this.speechEndUs,
   });
   final Float32List samples;
   final int startUs, endUs, segmentId, revision;
   final bool isFinal;
+  final String? endpointReason;
+  final int? speechEndUs;
 }
 
-/// Bounded energy VAD with revisable previews, 8s utterance windows,
-/// 400ms pre-roll and 500ms overlap. This is a segmentation heuristic.
+/// Revisable previews, 8s utterance windows, 400ms pre-roll and 500ms overlap.
+/// [add] retains the energy baseline; [addClassified] consumes neural VAD windows.
 class AudioSegmenter {
   AudioSegmenter({
     Duration previewInterval = const Duration(seconds: 2),
@@ -175,6 +179,16 @@ class AudioSegmenter {
   int? _startUs;
   int _silence = 0, _id = 0, _revision = 0, _lastPreview = 0;
   bool _speech = false;
+  bool _neuralMode = false, _neuralSpeaking = false;
+  int? _nextNeuralUs, _speechEndUs;
+  final List<({int start, int end})> _speechRanges = [];
+  static const _neuralWindowSamples = 512;
+  static const _neuralSilenceSamples = 12 * _neuralWindowSamples;
+  static const _minimumSpeechSamples = 4000;
+  static const _preRollSamples = 6400;
+  static const _tailPadSamples = 1536;
+  static const _maxSamples = 128000;
+  static const _overlapSamples = 8000;
   void reset() {
     _samples.clear();
     _startUs = null;
@@ -182,18 +196,26 @@ class AudioSegmenter {
     _speech = false;
     _revision = 0;
     _lastPreview = 0;
+    _neuralMode = false;
+    _neuralSpeaking = false;
+    _nextNeuralUs = null;
+    _speechEndUs = null;
+    _speechRanges.clear();
     _id++;
   }
 
-  AudioChunk _snapshot(bool finalResult) => AudioChunk(
-    Float32List.fromList(_samples),
-    _startUs!,
-    _startUs! + _samples.length * 1000000 ~/ 16000,
-    segmentId: _id,
-    revision: ++_revision,
-    isFinal: finalResult,
-  );
+  AudioChunk _snapshot(bool finalResult, {String? endpointReason}) =>
+      AudioChunk(
+        Float32List.fromList(_samples),
+        _startUs!,
+        _startUs! + _samples.length * 1000000 ~/ 16000,
+        segmentId: _id,
+        revision: ++_revision,
+        isFinal: finalResult,
+        endpointReason: endpointReason,
+      );
   List<AudioChunk> add(Float32List samples, int timestampUs) {
+    if (_neuralMode) reset();
     _startUs ??= timestampUs;
     _samples.addAll(samples);
     final loud = PcmConverter.rms(samples) > 0.007;
@@ -207,7 +229,10 @@ class AudioSegmenter {
     if (_speech &&
         ((_silence >= 9600 && _samples.length >= 16000) ||
             _samples.length >= 128000)) {
-      final result = _snapshot(true);
+      final result = _snapshot(
+        true,
+        endpointReason: _silence >= 9600 ? 'silence' : 'maxWindow',
+      );
       if (_silence >= 9600) {
         reset();
       } else {
@@ -232,12 +257,186 @@ class AudioSegmenter {
     return [];
   }
 
-  AudioChunk? flush() {
+  int get _neuralSpeechSamples =>
+      _speechRanges.fold(0, (sum, range) => sum + range.end - range.start);
+
+  /// Switch a failed classifier's unfinished utterance to the energy baseline.
+  /// Keep its real PCM, time origin, identity and preview progress; the caller
+  /// can then append the unclassified input without flushing or losing speech.
+  void useEnergyFallback() {
+    if (!_neuralMode) return;
+    _neuralMode = false;
+    _neuralSpeaking = false;
+    _nextNeuralUs = null;
+    _speechEndUs = null;
+    _speechRanges.clear();
+    _speech = PcmConverter.rms(Float32List.fromList(_samples)) > 0.007;
+    _silence = 0;
+  }
+
+  void _dropNeuralSamples(int count) {
+    if (count <= 0) return;
+    _samples.removeRange(0, count);
+    _startUs = _startUs! + count * 1000000 ~/ 16000;
+    final retained = <({int start, int end})>[
+      for (final range in _speechRanges)
+        if (range.end > count)
+          (start: math.max(0, range.start - count), end: range.end - count),
+    ];
+    _speechRanges
+      ..clear()
+      ..addAll(retained);
+  }
+
+  AudioChunk _neuralSnapshot(
+    bool finalResult, {
+    required int sampleCount,
+    String? endpointReason,
+  }) {
+    final endUs = _startUs! + sampleCount * 1000000 ~/ 16000;
+    return AudioChunk(
+      Float32List.fromList(_samples.sublist(0, sampleCount)),
+      _startUs!,
+      endUs,
+      segmentId: _id,
+      revision: ++_revision,
+      isFinal: finalResult,
+      endpointReason: endpointReason,
+      speechEndUs: _speechEndUs == null ? null : math.min(_speechEndUs!, endUs),
+    );
+  }
+
+  int get _trimmedNeuralLength => math.min(
+    _samples.length,
+    (_speechEndUs! - _startUs!) * 16000 ~/ 1000000 + _tailPadSamples,
+  );
+
+  // Preserve the latest real input, including audio omitted from the final's
+  // trailing silence. It remains available as the next utterance's pre-roll.
+  void _resetNeuralUtterance() {
+    _dropNeuralSamples(math.max(0, _samples.length - _preRollSamples));
+    _silence = 0;
+    _speech = false;
+    _neuralSpeaking = false;
+    _speechEndUs = null;
+    _speechRanges.clear();
+    _revision = 0;
+    _lastPreview = 0;
+    _id++;
+  }
+
+  /// Consume one new, non-overlapping 512-sample mono 16kHz VAD window.
+  /// [timestampUs] is its first sample's session timestamp, not receipt time.
+  /// A discontinuity flushes qualified old speech and clears VAD hysteresis.
+  List<AudioChunk> addClassified(
+    Float32List samples,
+    int timestampUs, {
+    required double speechProbability,
+  }) {
+    if (samples.length != _neuralWindowSamples ||
+        timestampUs < 0 ||
+        !speechProbability.isFinite ||
+        speechProbability < 0 ||
+        speechProbability > 1) {
+      throw ArgumentError('Expected one 512-sample VAD window and probability');
+    }
+    AudioChunk? beforeGap;
+    if (!_neuralMode) {
+      reset();
+    } else if (_nextNeuralUs != timestampUs) {
+      beforeGap = flush();
+    }
+    _neuralMode = true;
+    _startUs ??= timestampUs;
+    final offset = _samples.length;
+    _samples.addAll(samples);
+    _nextNeuralUs = timestampUs + 32000;
+    _neuralSpeaking = speechProbability >= (_neuralSpeaking ? 0.35 : 0.5);
+    if (_neuralSpeaking) {
+      if (_speechRanges.isNotEmpty && _speechRanges.last.end == offset) {
+        _speechRanges[_speechRanges.length - 1] = (
+          start: _speechRanges.last.start,
+          end: _samples.length,
+        );
+      } else {
+        _speechRanges.add((start: offset, end: _samples.length));
+      }
+      _speechEndUs = _nextNeuralUs;
+      _silence = 0;
+    } else {
+      _silence += samples.length;
+    }
+    if (_speechEndUs == null) {
+      _dropNeuralSamples(math.max(0, _samples.length - _preRollSamples));
+      return [?beforeGap];
+    }
+    final qualified = _neuralSpeechSamples >= _minimumSpeechSamples;
+    if (_silence >= _neuralSilenceSamples) {
+      final result = qualified
+          ? _neuralSnapshot(
+              true,
+              sampleCount: _trimmedNeuralLength,
+              endpointReason: 'silence',
+            )
+          : null;
+      _resetNeuralUtterance();
+      return [?result];
+    }
+    if (_samples.length >= _maxSamples) {
+      final result = qualified
+          ? _neuralSnapshot(
+              true,
+              sampleCount: _maxSamples,
+              endpointReason: 'maxWindow',
+            )
+          : null;
+      // A VAD window can cross the exact 8s boundary. Retain its remainder in
+      // addition to the 500ms overlap so no classified samples are lost.
+      _dropNeuralSamples(_maxSamples - _overlapSamples);
+      _revision = 0;
+      _lastPreview = 0;
+      _id++;
+      return [?result];
+    }
+    final previewSamples =
+        (_lastPreview == 0 ? firstPreview : previewInterval).inMicroseconds *
+        16000 ~/
+        1000000;
+    if (qualified && _samples.length - _lastPreview >= previewSamples) {
+      _lastPreview = _samples.length;
+      return [_neuralSnapshot(false, sampleCount: _samples.length)];
+    }
+    return [?beforeGap];
+  }
+
+  /// [tail] is an optional real, unclassified EOF remainder (<512 samples),
+  /// contiguous with the last classified window. It never adds speech evidence.
+  AudioChunk? flush({Float32List? tail, int? tailTimestampUs}) {
+    if (tail != null && tail.isNotEmpty) {
+      if (tail.length >= _neuralWindowSamples ||
+          tailTimestampUs == null ||
+          tailTimestampUs < 0 ||
+          (_neuralMode && tailTimestampUs != _nextNeuralUs)) {
+        throw ArgumentError('Expected a contiguous unclassified VAD tail');
+      }
+      if (_neuralMode) _samples.addAll(tail);
+    }
+    if (_neuralMode) {
+      final c = _neuralSpeechSamples >= _minimumSpeechSamples
+          ? _neuralSnapshot(
+              true,
+              sampleCount: _trimmedNeuralLength,
+              endpointReason: 'eof',
+            )
+          : null;
+      reset();
+      return c;
+    }
     if (!_speech || _samples.length < 1600) {
       reset();
       return null;
     }
-    final c = _snapshot(true);
+    final c = _snapshot(true, endpointReason: 'eof');
     reset();
     return c;
   }

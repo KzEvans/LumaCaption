@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-07",
+  "engine": "whisper.cpp",
+  "compatibleEngineVersion": "1.8.1",
+  "modelId": "silero-v5.1.2",
+  "format": "ggml",
+  "file": "ggml-silero-v5.1.2.bin",
+  "sampleRate": 16000,
+  "revision": "9ffd54a1e1ee413ddf265af9913beaf518d1639b",
+  "url": "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v5.1.2.bin",
+  "sha256": "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
+  "bytes": 885098,
+  "license": "MIT",
+  "source": "https://huggingface.co/ggml-org/whisper-vad/tree/9ffd54a1e1ee413ddf265af9913beaf518d1639b",
+  "upstream": "https://github.com/snakers4/silero-vad/tree/6478567951ae5c9979ad7b234185b5515f4be7a1",
+  "licenseSource": "https://github.com/snakers4/silero-vad/blob/6478567951ae5c9979ad7b234185b5515f4be7a1/LICENSE"
+}

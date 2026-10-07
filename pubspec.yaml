@@ -1,7 +1,7 @@
 name: lumacaption
 description: Native desktop audio captions and explicit-scope translation.
 publish_to: none
-version: 0.1.0+7
+version: 0.1.0+8
 environment:
   sdk: '>=3.10.0 <4.0.0'
 dependencies:

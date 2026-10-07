@@ -2,7 +2,9 @@
 
 macOS/Windows 实时字幕应用，共享 Dart 识别、翻译与存储逻辑。macOS 界面由 AppKit 完整承载，Windows 界面使用 Flutter。当前 0.1.0 为开发测试版；平台验收状态见 [docs/testing.md](docs/testing.md)，协议与能力边界见 [docs/feasibility.md](docs/feasibility.md)。产品完整要求保存在 [docs/product-spec.zh.md](docs/product-spec.zh.md)。
 
-当前分支 `codex/mac-liquid-glass` 的六个主页面、底部会话控制栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。全高度边栏包含系统窗口按钮、品牌图标与 LumaCaption 名称，布局参考 Apple Music。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
+macOS UI 基线 `codex/mac-liquid-glass` 的六个主页面、底部会话控制栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。全高度边栏包含系统窗口按钮、品牌图标与 LumaCaption 名称，布局参考 Apple Music。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
+
+当前实验分支 `codex/vad-endpoint-drain`（0.1.0+8）接入本地 Silero VAD、384ms 静音断句和 final 抢占在途预览，正常停止先排空已接收音频。实验产物单独放在 `dist/vad-endpoint/`，已安装 +7 不替换；实现和静音对照见 [VAD 断句与收尾](docs/vad-endpoint.md)。
 
 ## 使用
 
@@ -30,7 +32,7 @@ macOS 开发包更新可能改变 ad-hoc 代码身份，多个同名副本也容
 
 ## 构建
 
-固定 Flutter 3.47.6（Dart 3.13.5），`pubspec.lock` 锁定依赖；Whisper v1.8.1。模型权重不打包。
+固定 Flutter 3.47.6（Dart 3.13.5），`pubspec.lock` 锁定依赖；Whisper v1.8.1。Whisper ASR 权重不打包；此 macOS 实验分支随包提供固定校验的 Silero VAD 权重。
 
 macOS arm64：需要 Flutter、CMake、git，以及 macOS 26+ SDK（Xcode 或可用 CLT）。macOS 26+ 使用原生 Liquid Glass，13.3–15 使用 NSVisualEffectView。降低透明度时使用实色背景。脚本可用本项目 `.tools/flutter/bin/flutter`，或环境变量 `LUMA_FLUTTER` 指定已安装 Flutter。
 当前经过验证的 macOS 入口是下面的构建脚本；`macos/` Xcode scaffold 尚未集成原生桥接，不使用它作为完整开发运行入口。

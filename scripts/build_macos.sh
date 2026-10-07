@@ -2,6 +2,7 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
+VAD_MODEL=$(python3 "$ROOT/scripts/prepare_vad_model.py")
 FLUTTER=${LUMA_FLUTTER:-"$ROOT/.tools/flutter/bin/flutter"}
 if [[ ! -x "$FLUTTER" ]]; then FLUTTER=$(command -v flutter); fi
 "$FLUTTER" pub get --enforce-lockfile
@@ -29,6 +30,9 @@ cp build/whisper/liblumawhisper.dylib "$APP/Contents/Frameworks/"
 native/macos/build-swift.sh "$FRAMEWORK_PARENT" "$APP/Contents/MacOS/LumaCaption"
 cp native/macos/Info.plist "$APP/Contents/Info.plist"
 cp assets/branding/LumaCaption.icns "$APP/Contents/Resources/"
+mkdir -p "$APP/Contents/Resources/vad"
+cp "$VAD_MODEL" "$APP/Contents/Resources/vad/ggml-silero-v5.1.2.bin"
+cp assets/vad-model.json "$APP/Contents/Resources/vad/manifest.json"
 ditto docs/licenses "$APP/Contents/Resources/licenses"
 cp docs/THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
@@ -41,11 +45,13 @@ SIGN_OPTIONS=()
 if [[ "$IDENTITY" != "-" ]]; then SIGN_OPTIONS=(--options runtime); fi
 codesign --force --sign "$IDENTITY" ${SIGN_OPTIONS[@]+"${SIGN_OPTIONS[@]}"} --entitlements native/macos/Release.entitlements "$APP"
 codesign --verify --deep --strict "$APP"
-mkdir -p "$ROOT/dist"
-ditto --noextattr --norsrc "$APP" "$ROOT/dist/LumaCaption.app"
+OUTPUT_DIRECTORY=${LUMA_OUTPUT_DIRECTORY:-"$ROOT/dist"}
+mkdir -p "$OUTPUT_DIRECTORY"
+OUTPUT_DIRECTORY=$(cd "$OUTPUT_DIRECTORY" && pwd)
+ditto --noextattr --norsrc "$APP" "$OUTPUT_DIRECTORY/LumaCaption.app"
 ln -s /Applications "$STAGING/dmg/Applications"
-DMG="$ROOT/dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg"
+DMG="$OUTPUT_DIRECTORY/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg"
 rm -f "$DMG"
 hdiutil create -volname LumaCaption -srcfolder "$STAGING/dmg" -ov -format UDZO "$DMG"
-(cd "$ROOT/dist" && shasum -a 256 "$(basename "$DMG")") > "$DMG.sha256"
+(cd "$OUTPUT_DIRECTORY" && shasum -a 256 "$(basename "$DMG")") > "$DMG.sha256"
 "$SDK_ROOT/bin/dart" run scripts/artifact_manifest.dart "$DMG" macos arm64 "$APP"

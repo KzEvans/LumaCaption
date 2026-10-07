@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import '../core/audio/audio.dart';
 import '../core/asr/whisper.dart';
+import '../core/asr/vad.dart';
 import '../core/asr/inference_queue.dart';
 import '../core/asr/local_context.dart';
 import '../core/models/model_manager.dart';
@@ -17,15 +18,29 @@ import '../core/translation/translation.dart';
 import '../core/diagnostics/session_timing.dart';
 
 class AppController extends ChangeNotifier {
-  AppController({NativeBridge? bridge, WhisperEngine? engine})
-    : native = bridge ?? NativeBridge(),
-      whisper = engine ?? WhisperEngine();
+  AppController({
+    NativeBridge? bridge,
+    WhisperEngine? engine,
+    VadDetector? detector,
+  }) : native = bridge ?? NativeBridge(),
+       whisper = engine ?? WhisperEngine(),
+       vad = detector ?? SileroVadEngine();
   final NativeBridge native;
   AppSettings settings = AppSettings();
   SettingsStore? settingsStore;
   ModelManager? models;
   final SubtitleStore subtitles = SubtitleStore();
   final WhisperEngine whisper;
+  final VadDetector vad;
+  // Benchmark switches are session-local and never saved to user preferences.
+  bool enableNeuralVad = true, preemptFinalPreviews = true;
+  bool _useNeuralVad = false;
+  String get vadBackend => _useNeuralVad ? vad.backend : 'RMS · 600ms 静音';
+  Future<void>? _vadTask;
+  int _vadEpoch = 0, _vadNextOffset = 0, _vadBufferOffset = 0;
+  int? _vadBufferUs;
+  final List<double> _vadBuffer = [];
+  AudioChunk? _activeChunk, _preemptedChunk;
   final PcmConverter converter = PcmConverter();
   AudioSegmenter segmenter = AudioSegmenter();
   final LocalPreviewPipeline _localPreviews = LocalPreviewPipeline();
@@ -466,6 +481,7 @@ class AppController extends ChangeNotifier {
     try {
       // An aborted prior worker must finish before a new generation can use it.
       await _inferenceTask;
+      await _vadTask;
       await _modelPreparation;
       if (_disposed) return;
       if (settings.mode != 'realtime' && settings.modelPath.isEmpty) {
@@ -480,13 +496,18 @@ class AppController extends ChangeNotifier {
       _localPreviews.reset(generation);
       _recognitionContext.reset(generation);
       converter.reset();
-      segmenter = settings.mode == 'text'
-          ? AudioSegmenter(
-              firstPreview: const Duration(seconds: 1),
-              previewInterval: const Duration(milliseconds: 500),
-              enableAdaptive: true,
-            )
-          : AudioSegmenter();
+      segmenter = AudioSegmenter(
+        firstPreview: const Duration(seconds: 1),
+        previewInterval: const Duration(milliseconds: 500),
+        enableAdaptive: true,
+      );
+      await _prepareVad();
+      if (_disposed) return;
+      _vadEpoch++;
+      _vadNextOffset = 0;
+      _clearVadBuffer();
+      if (_useNeuralVad) await vad.reset(_vadEpoch);
+      if (_disposed) return;
       _chunks.clear();
       _baseUs = 0;
       _previousSequence = -1;
@@ -571,7 +592,10 @@ class AppController extends ChangeNotifier {
   }
 
   void _onAudio(AudioFrame frame) {
-    if (_previousSequence >= 0 && frame.sequence > _previousSequence + 1) {
+    final gap =
+        _previousSequence >= 0 && frame.sequence > _previousSequence + 1;
+    if (gap) {
+      converter.reset();
       droppedFrames += frame.sequence - _previousSequence - 1;
     }
     _previousSequence = frame.sequence;
@@ -601,10 +625,165 @@ class AppController extends ChangeNotifier {
         (settings.mode != 'realtime' ||
             !translating ||
             !settings.cloudTranscription)) {
-      for (final chunk in segmenter.add(samples, frame.timestampUs - _baseUs)) {
-        _enqueue(chunk);
+      final timestampUs = frame.timestampUs - _baseUs;
+      if (_useNeuralVad || _vadTask != null) {
+        _queueVad(samples, timestampUs, gap: gap);
+      } else {
+        if (gap) {
+          final previous = segmenter.flush();
+          if (previous != null) _enqueue(previous);
+        }
+        for (final chunk in segmenter.add(samples, timestampUs)) {
+          _enqueue(chunk);
+        }
       }
     }
+  }
+
+  Future<void> _prepareVad() async {
+    _useNeuralVad = false;
+    if (!enableNeuralVad || (settings.mode == 'realtime' && !whisper.ready)) {
+      return;
+    }
+    try {
+      if (!vad.ready) {
+        final path = SileroVadEngine.modelPath();
+        if (!await File(path).exists()) {
+          record('VAD 模型未随当前副本提供 · 使用 RMS 断句');
+          return;
+        }
+        await vad.load(path);
+      }
+      _useNeuralVad = vad.ready;
+      if (_useNeuralVad) record('本地 Silero VAD · 384ms 静音断句');
+    } catch (_) {
+      record('VAD 加载失败 · 使用 RMS 断句');
+    }
+  }
+
+  void _clearVadBuffer() {
+    _vadBuffer.clear();
+    _vadBufferUs = null;
+    _vadBufferOffset = _vadNextOffset;
+  }
+
+  // Audio stays accepted on the UI isolate. One FIFO waits for the independent
+  // CPU classifier; stop/pause drain this FIFO before flushing the real tail.
+  void _queueVad(Float32List samples, int timestampUs, {required bool gap}) {
+    final g = generation, offset = _vadNextOffset;
+    _vadNextOffset += samples.length;
+    final previous = _vadTask;
+    late final Future<void> task;
+    task =
+        (() async {
+          await previous;
+          if (g != generation || _disposed) return;
+          if (!_useNeuralVad) {
+            if (gap) {
+              final chunk = segmenter.flush();
+              if (chunk != null) _enqueue(chunk);
+            }
+            for (final chunk in segmenter.add(samples, timestampUs)) {
+              _enqueue(chunk);
+            }
+            return;
+          }
+          if (gap) {
+            final chunk = _flushLocal();
+            if (chunk != null) _enqueue(chunk);
+            _vadEpoch++;
+            await vad.reset(_vadEpoch);
+            if (g != generation || _disposed) return;
+          }
+          if (_vadBuffer.isEmpty) {
+            _vadBufferOffset = offset;
+            _vadBufferUs ??= timestampUs;
+          }
+          _vadBuffer.addAll(samples);
+          final epoch = _vadEpoch, watch = Stopwatch()..start();
+          try {
+            final frames = await vad.process(
+              samples,
+              generation: epoch,
+              sampleOffset: offset,
+            );
+            if (g != generation || _disposed) return;
+            sessionTiming?.vadProcessed(
+              generation: g,
+              samples: samples.length,
+              windows: frames.length,
+              elapsedUs: watch.elapsedMicroseconds,
+            );
+            for (final frame in frames) {
+              if (frame.generation != epoch ||
+                  frame.startSample != _vadBufferOffset ||
+                  frame.endSample - frame.startSample != 512 ||
+                  _vadBuffer.length < 512) {
+                throw StateError('VAD 返回了不连续的采样窗');
+              }
+              final window = Float32List.fromList(_vadBuffer.sublist(0, 512));
+              for (final chunk in segmenter.addClassified(
+                window,
+                _vadBufferUs!,
+                speechProbability: frame.probability,
+              )) {
+                _enqueue(chunk);
+              }
+              _vadBuffer.removeRange(0, 512);
+              _vadBufferOffset += 512;
+              _vadBufferUs = _vadBufferUs! + 32000;
+            }
+          } catch (_) {
+            if (g != generation || _disposed) return;
+            // Preserve the same pending utterance and its revisions, including
+            // speech shorter than the neural minimum, when switching to RMS.
+            segmenter.useEnergyFallback();
+            _useNeuralVad = false;
+            record('VAD 计算失败 · 已回退 RMS 断句');
+            if (_vadBuffer.isNotEmpty) {
+              for (final pending in segmenter.add(
+                Float32List.fromList(_vadBuffer),
+                _vadBufferUs!,
+              )) {
+                _enqueue(pending);
+              }
+            }
+            _clearVadBuffer();
+          }
+        })().whenComplete(() {
+          if (identical(_vadTask, task)) _vadTask = null;
+        });
+    _vadTask = task;
+  }
+
+  AudioChunk? _flushLocal() {
+    final tail = _useNeuralVad && _vadBuffer.isNotEmpty
+        ? Float32List.fromList(_vadBuffer)
+        : null;
+    final chunk = segmenter.flush(tail: tail, tailTimestampUs: _vadBufferUs);
+    _clearVadBuffer();
+    return chunk;
+  }
+
+  void _traceInference(
+    AudioChunk chunk,
+    int g,
+    String stage, {
+    int? elapsedUs,
+  }) {
+    sessionTiming?.localInference(
+      generation: g,
+      segmentId: 'local:${chunk.segmentId}',
+      sourceRevision: chunk.revision,
+      stage: stage,
+      isFinal: chunk.isFinal,
+      audioStartUs: chunk.startUs,
+      audioEndUs: chunk.endUs,
+      previewIntervalUs: segmenter.previewInterval.inMicroseconds,
+      inferenceUs: elapsedUs,
+      endpointReason: chunk.endpointReason,
+      speechEndUs: chunk.speechEndUs,
+    );
   }
 
   void _enqueue(AudioChunk chunk) {
@@ -616,6 +795,18 @@ class AppController extends ChangeNotifier {
       error = '本地识别跟不上声音，已跳过过时音频。请选择更小的模型。';
     }
     if (!accepted) return;
+    _traceInference(chunk, generation, 'enqueued');
+    final active = _activeChunk;
+    if (preemptFinalPreviews &&
+        chunk.isFinal &&
+        active != null &&
+        !active.isFinal &&
+        active.segmentId <= chunk.segmentId &&
+        !identical(_preemptedChunk, active)) {
+      _preemptedChunk = active;
+      _traceInference(active, generation, 'cancelRequested');
+      whisper.cancel();
+    }
     _inferenceTask ??= _infer(
       generation,
     ).whenComplete(() => _inferenceTask = null);
@@ -625,17 +816,9 @@ class AppController extends ChangeNotifier {
     while (_chunks.isNotEmpty && g == generation && !_disposed) {
       final chunk = _chunks.take()!;
       final watch = Stopwatch()..start();
+      _activeChunk = chunk;
       try {
-        sessionTiming?.localInference(
-          generation: g,
-          segmentId: 'local:${chunk.segmentId}',
-          sourceRevision: chunk.revision,
-          stage: 'started',
-          isFinal: chunk.isFinal,
-          audioStartUs: chunk.startUs,
-          audioEndUs: chunk.endUs,
-          previewIntervalUs: segmenter.previewInterval.inMicroseconds,
-        );
+        _traceInference(chunk, g, 'started');
         final results = await whisper.transcribe(
           chunk.samples,
           language: settings.sourceLanguage,
@@ -646,22 +829,21 @@ class AppController extends ChangeNotifier {
           isFinal: chunk.isFinal,
         );
         if (g != generation || _disposed) return;
+        if (identical(_preemptedChunk, chunk)) {
+          _traceInference(
+            chunk,
+            g,
+            'cancelAcknowledged',
+            elapsedUs: watch.elapsedMicroseconds,
+          );
+          continue;
+        }
         final inferenceUs = watch.elapsedMicroseconds;
         segmenter.observeInference(
           Duration(microseconds: inferenceUs),
           isFinal: chunk.isFinal,
         );
-        sessionTiming?.localInference(
-          generation: g,
-          segmentId: 'local:${chunk.segmentId}',
-          sourceRevision: chunk.revision,
-          stage: 'completed',
-          isFinal: chunk.isFinal,
-          audioStartUs: chunk.startUs,
-          audioEndUs: chunk.endUs,
-          previewIntervalUs: segmenter.previewInterval.inMicroseconds,
-          inferenceUs: inferenceUs,
-        );
+        _traceInference(chunk, g, 'completed', elapsedUs: inferenceUs);
         rtf = watch.elapsedMicroseconds / (chunk.endUs - chunk.startUs);
         {
           var text = results.map((r) => r.text).join().trim();
@@ -743,26 +925,47 @@ class AppController extends ChangeNotifier {
         _updateOverlay();
         notifyListeners();
       } catch (e) {
-        if (g == generation && !_disposed) fail(e);
+        if (g == generation && !_disposed) {
+          if (identical(_preemptedChunk, chunk)) {
+            _traceInference(
+              chunk,
+              g,
+              'cancelAcknowledged',
+              elapsedUs: watch.elapsedMicroseconds,
+            );
+          } else {
+            fail(e);
+          }
+        }
+      } finally {
+        if (identical(_activeChunk, chunk)) _activeChunk = null;
+        if (identical(_preemptedChunk, chunk)) _preemptedChunk = null;
       }
     }
   }
 
   Future<void> pause() async {
     if (!running || busy) return;
-    if (paused) {
-      await native.call<void>('resume');
-      paused = false;
-      status = '正在聆听';
-    } else {
-      await native.call<void>('pause');
-      paused = true;
-      level = 0;
-      final c = segmenter.flush();
-      if (c != null) _enqueue(c);
-      status = '已暂停';
+    busy = true;
+    try {
+      if (paused) {
+        if (_useNeuralVad) await vad.reset(++_vadEpoch);
+        await native.call<void>('resume');
+        paused = false;
+        status = '正在聆听';
+      } else {
+        await native.call<void>('pause');
+        paused = true;
+        level = 0;
+        await _vadTask;
+        final c = _flushLocal();
+        if (c != null) _enqueue(c);
+        status = '已暂停';
+      }
+    } finally {
+      busy = false;
+      if (!_disposed) notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> stop({bool emergency = false}) async {
@@ -781,6 +984,7 @@ class AppController extends ChangeNotifier {
       _recognitionContext.reset(generation);
       _chunks.clear();
       segmenter.reset();
+      _clearVadBuffer();
       whisper.cancel();
       _textQueue?.dispose();
       realtimeCancellation = _realtime?.cancel();
@@ -788,11 +992,12 @@ class AppController extends ChangeNotifier {
     notifyListeners();
     try {
       await native.call<void>('stop');
+      await _vadTask;
       if (emergency) {
         await realtimeCancellation;
         await _inferenceTask;
       } else {
-        final chunk = segmenter.flush();
+        final chunk = _flushLocal();
         if (chunk != null) _enqueue(chunk);
         await _inferenceTask;
         await _realtime?.finish();
@@ -811,7 +1016,7 @@ class AppController extends ChangeNotifier {
       record('会话已停止');
       await _persistHistory();
       sessionTiming?.stopped();
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -849,7 +1054,9 @@ class AppController extends ChangeNotifier {
             await Future<void>.delayed(Duration(microseconds: remaining));
           }
         } else {
-          while (_chunks.isNotEmpty || _inferenceTask != null) {
+          while (_vadTask != null ||
+              _chunks.isNotEmpty ||
+              _inferenceTask != null) {
             await Future<void>.delayed(const Duration(milliseconds: 50));
             if (g != generation || !running) return;
           }
@@ -1006,6 +1213,7 @@ class AppController extends ChangeNotifier {
     _textQueue?.dispose();
     _textAdapter?.dispose();
     whisper.cancel();
+    unawaited(vad.close());
     final preparing = _modelPreparation;
     if (preparing == null) {
       unawaited(whisper.close());
