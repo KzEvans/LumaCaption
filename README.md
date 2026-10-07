@@ -1,89 +1,133 @@
 # LumaCaption
 
-macOS/Windows 实时字幕应用，共享 Dart 识别、翻译与存储逻辑。macOS 界面由 AppKit 完整承载，Windows 界面使用 Flutter。当前 0.1.0 为开发测试版；平台验收状态见 [docs/testing.md](docs/testing.md)，协议与能力边界见 [docs/feasibility.md](docs/feasibility.md)。产品完整要求保存在 [docs/product-spec.zh.md](docs/product-spec.zh.md)。
+让理解，跟上声音。
 
-当前分支 `codex/mac-liquid-glass` 的六个主页面、底部会话控制栏、菜单、表单、文件弹窗和悬浮字幕均为原生 AppKit。全高度边栏包含系统窗口按钮、品牌图标与 LumaCaption 名称，布局参考 Apple Music。Liquid Glass 用于控制和悬浮层，正文保持清晰可读；Flutter Engine 仅运行后台业务。Windows Material 3 界面位于 `codex/windows-material3`。共享基线保留在 `main`。设计与验证说明见 [docs/ui-variant.md](docs/ui-variant.md)。
+LumaCaption 是一款桌面实时字幕应用：采集系统声音或麦克风，生成原文与译文，并在独立悬浮窗中显示。当前 macOS 版本使用原生 AppKit 界面，共享识别、翻译与存储逻辑由 Dart 承载。
 
-## 使用
+[下载 macOS 开发测试版](https://github.com/KiritoSkyWalker/LumaCaption/releases/tag/v0.1.0) · [更新记录](CHANGELOG.md) · [发布版验收记录](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md) · [第三方许可证](docs/THIRD_PARTY_NOTICES.md)
 
-macOS 打开 `dist/LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，拖动 LumaCaption.app 到 Applications，然后启动。测试包采用 ad-hoc 签名，未 Developer ID 签名或公证。应用无需 Flutter、Python、Node 或编译工具。
+## 当前 Release
 
-1. 在「模型管理」下载多语言 tiny/base/small，或导入兼容 GGML `.bin`。先选择「使用」加载。首次启动不自动下载。
-2. 在「实时字幕」选择工作模式和音频来源。离线模式完全本地；千问实时模式上传音频；文本模式仅上传原文文字，含可修订预览。
-3. 在线模式在「翻译服务」填写地域、Workspace、Endpoint、模型 ID、API Key。Key 存在系统安全存储；更换主机不会沿用旧主机凭据。
-4. 开始时按操作系统提示授权；可暂停/继续、正常停止等待最后一句，或立即停止上传。
-5. 打开悬浮窗；macOS 从菜单栏或 ⌃⌥⌘L 恢复鼠标交互，Windows 从托盘或 Ctrl+Alt+I 恢复。主窗口关闭会隐藏，退出会停止采集。
-6. 「历史与导出」提供 TXT/SRT/VTT。默认字幕只在内存，原始音频不落盘、不回放，无遥测。
-   开启历史保存后，已确认字幕可跨启动浏览；SRT/VTT 按会话导出，全部会话可导出 TXT。
+**v0.1.0（应用版本 0.1.0+7）来自 `codex/mac-liquid-glass` 分支，不含 VAD 实验。** `main` 保留早期共享基线；如需查看或构建当前 Release 的界面与功能，请切换到发布分支。
 
-macOS 开发包更新可能改变 ad-hoc 代码身份，多个同名副本也容易混淆授权对象。「设置与诊断」显示正在运行的应用路径，并区分开始时确认、当前副本被拒绝与需重启的状态。若开关已开启但仍收到系统拒绝，请完全退出应用；必要时在「屏幕与系统音频录制」移除旧条目，再添加当前 `/Applications/LumaCaption.app` 后重新打开。权限以真实 ScreenCaptureKit 启动结果为准，音频设备启动错误不会再归类为未授权。
+安装包支持 **macOS 13.3 及以上、Apple Silicon（arm64）**。macOS 26 及以上使用原生 Liquid Glass，较早系统使用 NSVisualEffectView；启用「降低透明度」时使用实色背景。主页面、全高度边栏、底部会话控制栏、菜单、表单、文件弹窗与悬浮字幕均由 AppKit 实现。
 
-实时音频模式默认使用 `qwen3.8-livetranslate-flash-realtime`，按 16 kHz PCM 分帧上传，仅请求文字输出；已有 3.5 配置继续使用对应协议。本地识别＋文本翻译使用 Whisper 与 `qwen-mt-flash`，仅上传原文文字。本地文本模式第 1 秒开始预览，随后根据推理耗时在 500 ms–3 秒之间调整间隔；只保留最新待处理预览，最终识别优先。连续两次按词一致的前缀提前翻译，比较忽略一般标点与大小写，末尾一个词仍可修订；稳定原文前缀正常显示，可修订尾部使用次级颜色；稳定前缀仍可因真实词变化退回，完整原文确认后校正译文。保留最长八秒识别上下文，仅已确认的短前文作为下一窗口提示。原文预览重译至少间隔 1.5 秒音频，预览和中断译文不会作为确认结果导出；提前翻译可能增加请求次数。两种服务的密钥分别按实际 Endpoint 存入钥匙串；Workspace 占位符在保存和读取凭据时一致展开。
+安装包包含运行所需的引擎和原生库，无需安装 Flutter、Python 或编译工具。Whisper 模型按需下载，不随安装包分发。包使用 **ad-hoc 签名，尚未进行 Developer ID 签名或公证**，属于开发测试版。Windows 尚无经过编译与实机验收的安装包，Intel Mac 和 Windows ARM64 也暂无安装包。
 
-0.1.0+7 在启动时后台校验并预加载已选本地模型，以一秒合成静音暖机；不采集声音、不生成字幕或翻译请求，模型在会话之间常驻。初始化不自动下载模型，测试模式不自动加载保存的选择。测试报告分别列出校验、原生加载和暖机时间。
+## 三种工作模式
 
-0.1.0+7 以同一公开 11 秒英语样本、真实 MT、实时节奏静音输入各测三轮：中文首个预览中位数 base 2.322 秒、small 2.538 秒，比 +6 的 3.336、3.611 秒各早约一秒；首个稳定原文前缀分别为 2.135、2.323 秒，首个确认译文仍为 8.516、8.714 秒。六轮最终该 22 词样本 WER=0%，不代表预览或总体准确率。每轮 ASR 从 10 增至 22 次、MT 从 6 增至 7–8 次；EOF 收尾中位数变为 0.586、1.013 秒，比 +6 略慢。预览会出现短片段并修订，MT 有一次首增量 1.556 秒离群值；两次钥匙串授权等待另计。见 [500 ms 对照与折中](docs/whisper-500ms-benchmark.md)。
+| 模式 | 识别与翻译方式 | 提交给在线服务的内容 |
+| --- | --- | --- |
+| 离线原文字幕 | 本地 whisper.cpp 识别，不调用翻译服务 | 无；不需要 API Key |
+| 千问实时音频翻译 | 默认 `qwen3.8-livetranslate-flash-realtime` 流式翻译，仅请求文字输出；保留 Qwen 3.5 协议兼容 | 单声道 16 kHz PCM 音频 |
+| 本地识别 + 文本翻译 | 本地 Whisper 识别，再调用 `qwen-mt-flash` 或配置的 OpenAI-compatible 文本服务 | 原文文字，包含可修订预览；原始音频留在本机 |
 
-0.1.0+6 的 macOS Whisper 使用 Metal，GPU 内核源码嵌入本地库，不依赖开发目录或额外编译工具；初始化失败时回退 CPU，界面显示实际后端。GPU 初始化仍有首次加载成本，模型保持加载后可连续使用；Windows 构建保持 CPU。已安装库对同一 11 秒公开样本的暖态原生推理中位数为 base 180 ms、small 452 ms，这不包含音频积累、稳定等待或 MT。静音在线实时节奏对照各三轮，音频开始后首个可修订译文中位数为 base 3.336 秒、small 3.611 秒，首个确认译文分别为 8.539、8.815 秒。首轮模型准备（含校验）7.556 秒和钥匙串授权准备等待 1672.409 秒另列；不把预览时间说成点击开始后的总等待。见 [Metal 实测与限制](docs/whisper-metal-benchmark.md)。
+可下载多语言 tiny / base / small 模型，或导入兼容的 GGML `.bin`。macOS Whisper 使用 **Metal**，初始化失败时回退 CPU，界面显示实际后端。选定模型在启动时后台校验、加载，并通过合成静音暖机；模型在会话之间常驻，暖机不会采集声音或发起翻译请求。
 
-0.1.0+5 用同一段 11 秒公开音频做三轮真实静音测试，本地 tiny＋MT 首个可修订译文中位数为 3.61 秒，旧版仅翻译确认原文为 9.01 秒；新版首个确认译文仍需 8.80 秒。用户所选 small 在 CPU 上单轮首译为 9.89 秒，等待主要发生在提交 MT 之前。详见 [预览策略实测](docs/whisper-mt-preview-benchmark.md)。这些时间从输入音频开始计算，模型加载和服务准备另计；首轮有 7.07 秒准备异常，不能称为点击开始后 3.61 秒。此前 Qwen 3.8 首译 3.28 秒及 MT 收尾长延迟见 [历史基线](docs/qwen38-whisper-mt-benchmark.md)。
+本地文本模式从第 1 秒开始预览，后续根据推理耗时在 **500 ms–3 秒**之间调整间隔。连续识别结果中一致的词语前缀可提前翻译，可修订尾部以次级颜色显示。预览仍可能改写；只有已确认字幕进入历史或 TXT / SRT / VTT 导出。
 
-## 构建
+## 安装与开始使用
 
-固定 Flutter 3.47.6（Dart 3.13.5），`pubspec.lock` 锁定依赖；Whisper v1.8.1。模型权重不打包。
+1. 从 [v0.1.0 Release](https://github.com/KiritoSkyWalker/LumaCaption/releases/tag/v0.1.0) 下载 `LumaCaption-0.1.0-macos-arm64-liquid-glass.dmg`，将 `LumaCaption.app` 拖入「应用程序」，再启动。Release 同时提供 SHA256 校验文件与构建清单。
+2. 在「模型管理」下载或导入模型，点击「使用」加载。首次启动不会自动下载模型。离线模式和本地识别 + 文本翻译模式需要本地模型。
+3. 在「实时字幕」选择声音来源和工作模式。首次试用可先选择「离线原文字幕」。
+4. 如需翻译，在「翻译服务」填写对应配置：实时模式需匹配密钥的地域、Workspace ID 和模型 ID，Endpoint 留空可使用地域模板；文本模式需填写 Base URL、模型 ID 和 API Key。保存后再开始字幕。在线使用由服务商计费。
+5. 按 macOS 提示授权：系统声音使用「隐私与安全性 → 屏幕与系统音频录制」，麦克风使用「麦克风」权限。系统设置的具体名称可能随 macOS 版本变化。
+6. 点击「开始字幕」，按需打开悬浮窗。正常停止会等待最后一句完成；「立即停止」会终止当前任务并清空当前会话显示。
 
-macOS arm64：需要 Flutter、CMake、git，以及 macOS 26+ SDK（Xcode 或可用 CLT）。macOS 26+ 使用原生 Liquid Glass，13.3–15 使用 NSVisualEffectView。降低透明度时使用实色背景。脚本可用本项目 `.tools/flutter/bin/flutter`，或环境变量 `LUMA_FLUTTER` 指定已安装 Flutter。
-当前经过验证的 macOS 入口是下面的构建脚本；`macos/` Xcode scaffold 尚未集成原生桥接，不使用它作为完整开发运行入口。
+系统声音采集通过 ScreenCaptureKit 的音频输出完成，应用不接收、保存或上传屏幕图像；macOS 仍会显示系统的录制或共享状态提示。更新 ad-hoc 开发包后，系统可能要求重新授权当前安装副本。如果设置中已允许但采集仍被拒绝，请完全退出应用，在「设置与诊断」核对应用路径；必要时移除旧授权条目，再添加「应用程序」内的当前副本并重新启动。
+
+关闭主窗口会将应用隐藏，可从菜单栏重新打开；退出应用会停止采集。悬浮窗开启鼠标穿透后，可从菜单栏或 **⌃⌥⌘L** 恢复交互。悬浮字幕支持原文、译文或双语显示，以及字号和透明度设置。
+
+## 数据与隐私
+
+- 原始音频只在内存中处理，不录制到文件、不回放。离线模式不向翻译服务上传音频或字幕。
+- 实时翻译模式上传音频；文本翻译模式上传原文文字，包括可修订的提前翻译预览。切换在线模式前请确认所选服务和 Endpoint。
+- API Key 保存到 macOS Keychain 或 Windows Credential Manager，不写入普通设置文件。凭据按服务地址区分，更换主机后需单独保存对应凭据。
+- 字幕默认只保存在内存。开启「保存历史」后，已确认字幕会写入本地历史；手动导出也会生成字幕文件。
+- 应用不包含遥测。提交 Issue 时请去除密钥、真实对话、个人文件路径及其他敏感信息。
+
+## 延迟与当前限制
+
+500 ms 是预览调度的最低间隔，**不是每个词或最终译文的延迟保证**。原文稳定、完整片段确认和翻译服务响应仍需要时间；提前预览会增加计算与请求次数。
+
+0.1.0+7 对同一公开 11 秒英语样本以实时节奏静默输入，并使用真实 `qwen-mt-flash` 翻译为中文，各模型测三轮：
+
+| 指标，中位数 | base | small |
+| --- | ---: | ---: |
+| 音频开始 → 首个可修订译文 | 2.322 秒 | 2.538 秒 |
+| 音频开始 → 首个确认译文 | 8.516 秒 | 8.714 秒 |
+| 音频结束 → 最后确认译文 | 0.586 秒 | 1.013 秒 |
+
+模型准备和钥匙串授权等待另计；以上只覆盖一个干净短样本，不代表复杂环境的准确率、逐词延迟或点击开始后的总等待。完整测量口径、范围与离群值见 [500 ms 对照报告](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/whisper-500ms-benchmark.md)。Qwen 3.8 与本地 Whisper + MT 两条路线均有静音在线联调记录，其他 OpenAI-compatible 服务尚未完成真实联调。
+
+macOS 已验证真实模型推理、系统声音采集路径和悬浮窗原生属性。麦克风真实录音、悬浮窗完整手工交互、多屏与全屏场景仍需验收。tiny 模型可能漏词或误识别。Windows AI Speech SDK、MSIX、Windows 实机与安装包、完整英文界面及部分高级翻译配置仍待开发或验证。
+
+## 分支说明
+
+| 分支 | 用途 |
+| --- | --- |
+| [`main`](https://github.com/KiritoSkyWalker/LumaCaption/tree/main) | 早期共享基线 0.1.0+1：Flutter 内容界面、原生采集与悬浮字幕、CPU Whisper、Qwen 3.5 / 文本翻译适配器；不是当前 Release 来源 |
+| [`codex/mac-liquid-glass`](https://github.com/KiritoSkyWalker/LumaCaption/tree/codex/mac-liquid-glass) | 当前 macOS Release 0.1.0+7：原生 AppKit / Liquid Glass、Qwen 3.8、Metal Whisper、稳定前缀与 500 ms 预览、后台暖机 |
+| [`codex/windows-material3`](https://github.com/KiritoSkyWalker/LumaCaption/tree/codex/windows-material3) | Windows Material 3 界面方向；尚待 Windows 编译与设备验收 |
+| [`codex/vad-endpoint-drain`](https://github.com/KiritoSkyWalker/LumaCaption/tree/codex/vad-endpoint-drain) | 基于 macOS 优化版的断句与收尾实验：Silero VAD、过时预览取消、末句排空；未纳入当前 Release |
+
+VAD 判断语音活动与停顿，不保证语义上的完整句子。实验分支的结果应按该分支文档理解。
+
+## 从源码构建
+
+当前 macOS Release 的源码位于 `codex/mac-liquid-glass`：
+
+```sh
+git clone https://github.com/KiritoSkyWalker/LumaCaption.git
+cd LumaCaption
+git switch codex/mac-liquid-glass
+```
+
+依赖版本为 **Flutter 3.47.6 / Dart 3.13.5、whisper.cpp v1.8.1**。Dart 依赖由 `pubspec.lock` 锁定。需要 Git 和 CMake 3.24 或以上；没有本地 Whisper 源码时，CMake FetchContent 会获取固定版本，首次构建需要网络。
 
 ```sh
 flutter pub get --enforce-lockfile
-dart analyze lib test
+dart analyze lib test scripts/artifact_manifest.dart
 flutter test
+```
+
+### macOS arm64
+
+需要 **macOS 26 或以上的 SDK**（Xcode 或可用 Command Line Tools），以编译 Liquid Glass API；应用仍包含较早 macOS 的运行时回退路径。完整应用通过脚本构建：
+
+```sh
 LUMA_FLUTTER="$(command -v flutter)" scripts/build_macos.sh
 ```
 
-Windows x64：Windows 10/11、VS2022 Desktop development with C++、Windows SDK 10.0.22621+、CMake、git、Flutter 3.47.6、Inno Setup 6.4.3。
+产物位于 `dist/`，包含 `.app`、DMG、`.sha256` 与 `.artifact.json`。构建清单记录源码 revision、版本、架构、SHA256 和实际签名类型。`macos/` 中的 Flutter Xcode scaffold 尚未集成完整原生桥接，请使用构建脚本作为完整应用入口。
+
+脚本支持以 `LUMA_SIGN_IDENTITY` 指定自己的 Developer ID Application 身份；公证和证书配置由发布者单独管理，凭据不放入源码。
+
+### Windows x64
+
+先切换到 `codex/windows-material3`。需要 Windows 10/11、VS2022 的 Desktop development with C++、Windows SDK 10.0.22621 或以上、CMake、Git、Flutter，以及 Inno Setup 6.4.3：
 
 ```powershell
+git switch codex/windows-material3
 flutter pub get --enforce-lockfile
-dart analyze lib test
+dart analyze lib test scripts/artifact_manifest.dart
 flutter test
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 ```
 
-Windows 脚本生成真正 Inno Setup 安装器，包含 Flutter engine、assets、Whisper DLL 和 app-local VC143 CRT，支持快捷方式及卸载。脚本尚未在 Windows 运行。双平台 CI 在 `.github/workflows/build.yml`，只有成功 CI 的产物才算已构建。
+脚本目标为包含 Flutter、Whisper DLL 和 app-local VC143 CRT 的 Inno Setup 安装器，Whisper 保持 CPU 路径。此平台尚未实际构建验证。仓库提供 [GitHub Actions 配置](.github/workflows/build.yml)，配置存在不代表运行成功，请以具体运行结果为准。
 
-macOS 正式签名：设置 `LUMA_SIGN_IDENTITY` 为自己的 Developer ID Application 身份，脚本启用 Hardened Runtime。可用 `xcrun notarytool submit <dmg> --keychain-profile <自己的配置> --wait` 及 `xcrun stapler staple <dmg>`；证书和凭据不进入源码。没有正式身份时保持可安装的 ad-hoc 测试包。
+## 静音测试与反馈
 
-## 无 Key 的真实文件测试
-
-普通测试使用本地 mock 协议，不产生 API 费用。使用你有权处理的 16-bit PCM 或 float32 WAV；可在「设置与诊断」中选择文件，先切换到离线模式。
-
-原生库构建后可显式运行 FFI 验收：
+普通测试使用本地 mock 协议，不读取真实 API Key、不访问翻译服务。真实 Whisper FFI 测试需显式提供模型与 WAV：
 
 ```sh
-LUMA_TEST_MODEL=/绝对路径/ggml-tiny.bin \
-LUMA_TEST_WAV=/绝对路径/测试.wav \
+LUMA_TEST_MODEL=/path/to/ggml-tiny.bin \
+LUMA_TEST_WAV=/path/to/whisper.cpp/samples/jfk.wav \
 flutter test test/whisper_integration_test.dart --reporter expanded
 ```
 
-该验收期待一段包含英文 country 的音频，开发验证使用 whisper.cpp 的 `samples/jfk.wav`。本仓库没有分发音频；用户也可提供自己的 WAV 并通过 GUI 验证，不限定词句。
+这项测试预期输入上游 `samples/jfk.wav` 中的英文样本。音频样本和模型权重不在本仓库或默认安装包中分发。在「设置与诊断」也可选择自己有权处理的 WAV，使用离线模式静默验证转写。
 
-完整 GUI 可显式注入真实 WAV（不上传、不修改普通设置）：
-
-```sh
-dist/LumaCaption.app/Contents/MacOS/LumaCaption \
-  --test-model=/绝对路径/ggml-tiny.bin \
-  --test-wav=/绝对路径/测试.wav \
-  --test-output=/绝对路径/验收结果.json
-```
-
-此入口为明确测试模式，使用真实模型、音频、字幕和悬浮窗；没有生产 mock 或伪造输出。
-
-显式在线静音验收可增加 `--test-mode=realtime` 或 `--test-mode=text`、`--test-online=true --test-paced=true --test-source-language=en --test-target-language=zh`。它只读取指定 WAV，通过正常业务路径按 100 ms 分帧处理，不播放、不采集麦克风，不修改普通设置或历史。密钥读取已保存的系统安全存储，不接受密钥命令行参数；本地路径需 `--test-model`，实时云端路径不加载本地 Whisper。省略在线标记时仍为离线验收。报告区分模型加载、服务准备、首段原文、首段译文、末句收尾和音频帧调度；字幕时间未知时不会编造时间。
-
-受控原生采集测试可将 `--test-wav=...` 换为 `--test-source=system` 或 `--test-source=microphone`，再指定 `--test-duration=20`（1–120 秒）。它只运行离线模式，结束后停止采集，报告帧数、电平、转写和悬浮窗原生属性，不写普通设置或历史。测试音频需另行播放。命令行与正常 GUI 的 TCC 授权上下文可能不同；本机 CLI 的系统采集被 TCC 拒绝，正常 GUI 路径已实际通过。
-
-## 当前未完成
-
-Windows AI Speech SDK 集成、MSIX、Windows 安装产物与实机验收；麦克风、悬浮窗完整手工交互验收；其它 OpenAI-compatible 服务真实联调；Core ML 推理、Intel/Windows ARM64；术语与高级文本参数的完整 GUI、可配置全局快捷键 UI、英文界面完整本地化。性能数字只代表记录的测试条件；此前 tiny 系统声音样本出现过误识别和漏词。
+反馈问题时请注明分支、应用版本、系统版本、工作模式及脱敏后的复现步骤。发布版详细边界见 [验收记录](https://github.com/KiritoSkyWalker/LumaCaption/blob/codex/mac-liquid-glass/docs/testing.md)。第三方组件与模型的许可证见 [THIRD_PARTY_NOTICES](docs/THIRD_PARTY_NOTICES.md)。
